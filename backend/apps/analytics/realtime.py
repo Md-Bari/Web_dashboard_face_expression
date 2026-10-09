@@ -101,7 +101,7 @@ def _simulate_step(session_id, skip_ids):
         key = (session_id, student.id)
         if key not in _sim_state:
             seed = latest.get(student.id)
-            emotion = seed.smoothed_emotion if seed else 'neutral'
+            emotion = seed.smoothed_emotion if seed else random.choice(['positive', 'positive', 'neutral', 'negative'])
             _sim_state[key] = {
                 'emotion': emotion,
                 'attention': seed.smoothed_attention if seed else 0.7,
@@ -111,7 +111,7 @@ def _simulate_step(session_id, skip_ids):
         entry.update(_next_state(entry, entry['bias']))
         confidence = round(random.uniform(0.84, 0.98), 2)
         pred = SmoothingEngine.smooth(
-            session, student, entry['emotion'], round(entry['attention'], 2), confidence,
+            session, student, entry['emotion'], round(entry['attention'], 2), confidence, simulated=True,
         )
         updates.append({
             'student_id': student.id,

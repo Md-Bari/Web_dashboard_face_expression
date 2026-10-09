@@ -17,7 +17,7 @@ export function StudentGrid() {
 
   const filteredStudents = students.filter((s) => {
     if (filter === 'all') return true;
-    return s.emotion === filter;
+    return s.has_data !== false && s.emotion === filter;
   });
 
   return (
@@ -139,21 +139,27 @@ export function StudentGrid() {
                   <div>
                     <p className="text-xs font-bold text-slate-900">{student.name}</p>
                     <p className="text-[11px] text-slate-500">
-                      Attention: {Math.round(student.attention * 100)}%
+                      {student.has_data === false
+                        ? 'No data'
+                        : `Attention: ${Math.round(student.attention * 100)}%${student.simulated ? ' · simulated' : ''}`}
                     </p>
                   </div>
                 </div>
-                <span
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                    student.emotion === 'positive'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : student.emotion === 'neutral'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-rose-100 text-rose-700'
-                  }`}
-                >
-                  {student.emotion.charAt(0).toUpperCase() + student.emotion.slice(1)}
-                </span>
+                {student.has_data === false ? (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">—</span>
+                ) : (
+                  <span
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                      student.emotion === 'positive'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : student.emotion === 'neutral'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-rose-100 text-rose-700'
+                    }`}
+                  >
+                    {student.emotion.charAt(0).toUpperCase() + student.emotion.slice(1)}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -202,7 +208,18 @@ export function StudentGrid() {
               </div>
             </div>
 
+            {selectedStudent.has_data === false ? (
+              <p className="text-xs text-slate-500 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                No emotion or attention data has been recorded for this student yet.
+              </p>
+            ) : (
             <div className="space-y-2.5 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Data source</span>
+                <span className={`font-bold ${selectedStudent.simulated ? 'text-violet-700' : 'text-slate-900'}`}>
+                  {selectedStudent.simulated ? 'Simulated (Demo Telemetry)' : 'Webcam + AI model'}
+                </span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Current Emotion</span>
                 <span className="font-bold capitalize text-slate-900">{selectedStudent.emotion}</span>
@@ -226,6 +243,7 @@ export function StudentGrid() {
                 </span>
               </div>
             </div>
+            )}
 
             <div className="mt-4 flex items-center gap-2 text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
               <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600" />

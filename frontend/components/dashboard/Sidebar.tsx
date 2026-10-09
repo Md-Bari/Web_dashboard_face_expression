@@ -14,11 +14,13 @@ import {
   Cpu,
   LogOut,
   Play,
+  Square,
   GraduationCap,
   Loader2,
 } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { api } from '@/lib/api';
+import { useLogout } from '@/lib/useLogout';
 
 export const NAV_ITEMS = [
   { name: 'Dashboard', icon: LayoutDashboard },
@@ -46,8 +48,10 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { logout, loggingOut } = useLogout();
 
   const isLive = session?.status === 'LIVE';
+  const modelActive = modelStatus.status === 'Active';
 
   const changeSession = async (action: 'end' | 'start') => {
     if (!session) return;
@@ -113,32 +117,33 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
         <div className="p-3 rounded-xl bg-[#111F3C] border border-[#1E315A] shadow-inner">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400">
-              <Cpu className="w-4 h-4 animate-pulse" />
+              <Cpu className={`w-4 h-4 ${modelActive ? 'animate-pulse' : ''}`} />
             </div>
             <div>
               <p className="text-xs font-semibold text-white">AI Model</p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    modelStatus.status === 'Active' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
-                  }`}
-                ></span>
-                <span
-                  className={`text-[11px] font-medium ${
-                    modelStatus.status === 'Active' ? 'text-emerald-400' : 'text-amber-400'
-                  }`}
-                >
+                <span className={`w-2 h-2 rounded-full ${modelActive ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`}></span>
+                <span className={`text-[11px] font-medium ${modelActive ? 'text-emerald-400' : 'text-amber-400'}`}>
                   Status: {modelStatus.status}
                 </span>
               </div>
             </div>
           </div>
-          <p className="mt-2 text-[10px] text-slate-400 truncate" title={modelStatus.model_name}>
-            {modelStatus.model_name}
-          </p>
+          {modelStatus.status === 'No model' ? (
+            <p className="mt-2 text-[10px] leading-snug text-slate-400">
+              No emotion data from webcams. Add a <span className="font-mono">.onnx</span> file to{' '}
+              <span className="font-mono">backend/inference/models/</span>.
+            </p>
+          ) : (
+            <p className="mt-2 text-[10px] text-slate-400 truncate" title={modelStatus.model_name}>
+              {modelStatus.model_name}
+            </p>
+          )}
           <div className="mt-1.5 pt-1.5 border-t border-[#1E315A]/70 flex items-center justify-between text-[10px] text-slate-400">
             <span>Latency</span>
-            <span className="text-blue-300 font-mono">{modelStatus.latency_ms} ms</span>
+            <span className="text-blue-300 font-mono">
+              {modelActive && modelStatus.latency_ms ? `${modelStatus.latency_ms} ms` : '—'}
+            </span>
           </div>
         </div>
 
@@ -148,7 +153,7 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
             onClick={() => setConfirmOpen(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-rose-400 hover:text-white hover:bg-rose-500/20 border border-rose-500/30 transition-all active:scale-[0.98]"
           >
-            <LogOut className="w-4 h-4 text-rose-400" />
+            <Square className="w-4 h-4 text-rose-400" />
             <span>End Session</span>
           </button>
         ) : (
@@ -162,6 +167,16 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
           </button>
         )}
         {error && !confirmOpen && <p className="text-[11px] text-rose-400">{error}</p>}
+
+        {/* Log out */}
+        <button
+          onClick={logout}
+          disabled={loggingOut}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-[#152342] border border-[#1E315A] transition-all active:scale-[0.98] disabled:opacity-60"
+        >
+          {loggingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+          <span>{loggingOut ? 'Logging out…' : 'Log out'}</span>
+        </button>
       </div>
 
       {/* End Session confirmation */}

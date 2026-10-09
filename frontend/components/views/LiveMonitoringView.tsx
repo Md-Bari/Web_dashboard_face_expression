@@ -26,7 +26,7 @@ export function LiveMonitoringView() {
         action={
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
             <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-            {modelStatus.model_name} · {modelStatus.latency_ms} ms
+            {modelStatus.custom_model ? `${modelStatus.model_name} · ${modelStatus.latency_ms} ms` : 'No AI model loaded'}
           </span>
         }
       />

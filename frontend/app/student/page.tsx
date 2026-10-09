@@ -165,6 +165,9 @@ export default function StudentPortal() {
           timerRef.current = setInterval(captureAndSend, FRAME_INTERVAL_MS);
         } else if (data.type === 'telemetry') {
           setTelemetry(data);
+          setMessage(null);
+        } else if (data.type === 'model.missing') {
+          setMessage(data.message);
         } else if (data.type === 'error') {
           setMessage(data.message);
         }

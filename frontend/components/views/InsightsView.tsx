@@ -61,10 +61,10 @@ export function InsightsView() {
     out.push({
       tone: 'info',
       icon: Cpu,
-      title: modelStatus.custom_model ? 'Custom ONNX model active' : 'Running on the built-in adaptive engine',
+      title: modelStatus.custom_model ? 'Custom ONNX model active' : 'No AI model loaded',
       body: modelStatus.custom_model
         ? `Predictions come from ${modelStatus.model_name} (${modelStatus.latency_ms} ms per frame).`
-        : 'No .onnx file found in backend/inference/models yet. Drop your trained YOLO/emotion model there and it is picked up automatically within seconds.',
+        : 'Webcam frames produce no emotion or attention data until a model is added. Drop your trained .onnx model into backend/inference/models and it is picked up automatically within seconds. Any values shown now come from Demo Telemetry.',
     });
     return out;
   }, [snapshot, trend, students, modelStatus]);

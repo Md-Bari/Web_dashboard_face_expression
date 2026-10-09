@@ -3,8 +3,8 @@ In-process inference engine used by the Channels consumers.
 
 Wraps the same EmotionModel / GazeTracker classes the standalone worker uses
 (backend/inference). Any .onnx file dropped into backend/inference/models/ is
-picked up automatically (rescanned every few seconds); until then the adaptive
-fallback engine produces the telemetry.
+picked up automatically (rescanned every few seconds); until then no emotion or
+attention values are produced at all.
 
 PRIVACY: frames are decoded in memory only and never written anywhere.
 """
@@ -63,20 +63,30 @@ class InferenceEngine:
         return self.emotion_model.session is not None
 
     def status(self):
+        # Polled every few seconds by the session loop, so a dropped-in model is noticed
+        # even while no student is streaming.
+        self._maybe_reload()
+        loaded = self.custom_model_loaded
         return {
-            'status': 'Active',
+            'status': 'Active' if loaded else 'No model',
             'model_name': self.emotion_model.model_name,
-            'custom_model': self.custom_model_loaded,
-            'latency_ms': self.last_latency_ms,
+            'custom_model': loaded,
+            'latency_ms': self.last_latency_ms if loaded else 0,
         }
 
     def warmup(self):
+        if not self.custom_model_loaded:
+            return
         blank = np.full((224, 224, 3), 128, dtype=np.uint8)
         self._run(blank)
 
     def _run(self, face_bgr):
+        """Telemetry for one face, or None when there is no model to produce it."""
         start = time.perf_counter()
-        emotion, confidence, scores = self.emotion_model.predict(face_bgr)
+        prediction = self.emotion_model.predict(face_bgr)
+        if prediction is None:
+            return None
+        emotion, confidence, scores = prediction
         attention = self.gaze.estimate_attention(face_bgr)
         self.last_latency_ms = max(1, int((time.perf_counter() - start) * 1000))
         self.frames_processed += 1
@@ -89,8 +99,10 @@ class InferenceEngine:
         }
 
     def analyze(self, data_url):
-        """Decode a base64 JPEG data URL and return telemetry, or None if undecodable."""
+        """Decode a base64 JPEG data URL and return telemetry, or None if undecodable or no model is loaded."""
         self._maybe_reload()
+        if not self.custom_model_loaded:
+            return None
         try:
             b64 = data_url.split(',', 1)[1] if ',' in data_url else data_url
             img = Image.open(io.BytesIO(base64.b64decode(b64))).convert('RGB')

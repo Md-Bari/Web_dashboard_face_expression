@@ -64,7 +64,11 @@ def run_worker():
             start_t = time.time()
             face_bgr = decode_base64_image(task['image'])
             
-            emotion, conf, scores = emotion_model.predict(face_bgr)
+            prediction = emotion_model.predict(face_bgr)
+            if prediction is None:
+                # No model loaded (or it failed): publish nothing rather than an invented result
+                continue
+            emotion, conf, scores = prediction
             attention = gaze_tracker.estimate_attention(face_bgr)
             latency_ms = int((time.time() - start_t) * 1000)
 

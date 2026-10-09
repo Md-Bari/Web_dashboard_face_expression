@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 import base64
 import io
 import json
+from unittest import mock
 
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
@@ -11,6 +12,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from apps.accounts.ws_auth import JWTCookieAuthMiddleware
+from apps.analytics.inference_engine import get_engine
 from apps.analytics.routing import websocket_urlpatterns
 from apps.courses.models import Course, ClassSession, Enrollment
 from apps.analytics.models import Prediction, SessionSnapshot
@@ -166,15 +168,32 @@ class ConsumerTestCase(TransactionTestCase):
         await self.student.arefresh_from_db()
         self.assertFalse(self.student.consent_given)
 
-    async def test_student_frame_produces_telemetry_and_persists_prediction(self):
+    async def send_one_frame(self):
         comm = self.communicator(f'/ws/student/{self.session.id}/?student_id={self.student.id}&consent=1')
         await comm.connect()
         ready = json.loads((await comm.receive_output())['text'])
         self.assertEqual(ready['type'], 'ready')
         await comm.send_to(text_data=json.dumps({'type': 'frame', 'image': make_frame()}))
-        telemetry = json.loads((await comm.receive_output(timeout=10))['text'])
+        reply = json.loads((await comm.receive_output(timeout=10))['text'])
+        return comm, reply
+
+    async def test_without_model_frames_produce_no_data(self):
+        engine = get_engine()
+        with mock.patch.object(engine.emotion_model, 'session', None):
+            comm, reply = await self.send_one_frame()
+        self.assertEqual(reply['type'], 'model.missing')
+        self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 0)
+        await comm.disconnect()
+
+    async def test_student_frame_produces_telemetry_and_persists_prediction(self):
+        engine = get_engine()
+        with mock.patch.object(engine.emotion_model, 'session', object()), \
+                mock.patch.object(engine.emotion_model, 'predict',
+                                  return_value=('positive', 0.9, {'positive': 0.9, 'neutral': 0.07, 'negative': 0.03})):
+            comm, telemetry = await self.send_one_frame()
         self.assertEqual(telemetry['type'], 'telemetry')
-        self.assertIn(telemetry['emotion'], ('positive', 'neutral', 'negative'))
+        self.assertEqual(telemetry['emotion'], 'positive')
         self.assertTrue(0 <= telemetry['attention'] <= 1)
-        self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 1)
+        pred = await Prediction.objects.aget(student=self.student)
+        self.assertFalse(pred.is_simulated)
         await comm.disconnect()

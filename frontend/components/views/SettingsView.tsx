@@ -1,12 +1,11 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
 import { ExternalLink, FolderOpen, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useDashboardStore } from '@/lib/store';
 import { sendInstructorAction } from '@/lib/websocket';
-import { api } from '@/lib/api';
+import { useLogout } from '@/lib/useLogout';
 import { wsBase } from '@/lib/config';
 import { Avatar } from '@/components/dashboard/Avatar';
 import { Card, PageTitle } from './ui';
@@ -26,18 +25,8 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 }
 
 export function SettingsView() {
-  const router = useRouter();
-  const { user, session, modelStatus, demoEnabled, connection, setUser, reset } = useDashboardStore();
-
-  const logout = async () => {
-    try {
-      await api.logout();
-    } finally {
-      setUser(null);
-      reset();
-      router.replace('/login');
-    }
-  };
+  const { user, session, modelStatus, demoEnabled, connection } = useDashboardStore();
+  const { logout, loggingOut } = useLogout();
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -52,8 +41,8 @@ export function SettingsView() {
               <p className="text-xs text-slate-500">{user?.email || user?.username} · <span className="capitalize">{user?.role}</span></p>
             </div>
           </div>
-          <button onClick={logout} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50">
-            <LogOut className="w-3.5 h-3.5" /> Sign out
+          <button onClick={logout} disabled={loggingOut} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 disabled:opacity-60">
+            <LogOut className="w-3.5 h-3.5" /> {loggingOut ? 'Logging out…' : 'Log out'}
           </button>
         </div>
       </Card>
@@ -72,8 +61,8 @@ export function SettingsView() {
       <Card title="AI model">
         <dl className="grid grid-cols-2 gap-4 text-xs">
           <div><dt className="text-slate-500">Model</dt><dd className="font-semibold text-slate-800 mt-0.5 break-words">{modelStatus.model_name}</dd></div>
-          <div><dt className="text-slate-500">Type</dt><dd className="font-semibold text-slate-800 mt-0.5">{modelStatus.custom_model ? 'Custom ONNX' : 'Built-in adaptive engine'}</dd></div>
-          <div><dt className="text-slate-500">Latency</dt><dd className="font-semibold text-slate-800 mt-0.5">{modelStatus.latency_ms} ms / frame</dd></div>
+          <div><dt className="text-slate-500">Type</dt><dd className="font-semibold text-slate-800 mt-0.5">{modelStatus.custom_model ? 'Custom ONNX' : 'None - no predictions are made'}</dd></div>
+          <div><dt className="text-slate-500">Latency</dt><dd className="font-semibold text-slate-800 mt-0.5">{modelStatus.custom_model && modelStatus.latency_ms ? `${modelStatus.latency_ms} ms / frame` : '—'}</dd></div>
           <div><dt className="text-slate-500">Status</dt><dd className="font-semibold text-slate-800 mt-0.5">{modelStatus.status}</dd></div>
         </dl>
         <div className="mt-3 flex items-start gap-2 text-[11px] text-slate-600 bg-blue-50 border border-blue-100 rounded-xl p-3">

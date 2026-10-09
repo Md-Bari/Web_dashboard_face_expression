@@ -44,7 +44,7 @@ export interface TeachingSuggestionData {
 }
 
 export interface ModelStatusData {
-  status: 'Active' | 'Standby' | 'Connecting' | 'Offline';
+  status: 'Active' | 'No model' | 'Connecting' | 'Offline';
   model_name: string;
   latency_ms: number;
   custom_model?: boolean;

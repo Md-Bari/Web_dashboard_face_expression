@@ -51,6 +51,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
         self.registered = False
         self.user = None
         self.last_frame_at = 0.0
+        self.told_no_model = False
 
         await self.accept()
 
@@ -122,7 +123,15 @@ class StudentConsumer(AsyncWebsocketConsumer):
 
         result = await asyncio.to_thread(get_engine().analyze, frame_data)
         if result is None:
+            if not get_engine().custom_model_loaded and not self.told_no_model:
+                self.told_no_model = True
+                await self.send(text_data=json.dumps({
+                    "type": "model.missing",
+                    "message": "No AI model is loaded on the server, so no emotion or attention data is "
+                               "produced from your camera. Your instructor sees you as online only.",
+                }))
             return
+        self.told_no_model = False
         timestamp = payload.get('timestamp') or int(time.time() * 1000)
 
         smoothed = await self.smooth_and_save(result['emotion'], result['attention'], result['confidence'])
@@ -278,6 +287,7 @@ class InstructorConsumer(AsyncWebsocketConsumer):
         session = ClassSession.objects.select_related('course').get(id=self.session_id)
         latest, _ = AggregationService.latest_predictions(session)
         online_after = timezone.now() - timedelta(seconds=PRESENCE_WINDOW_SECONDS)
+        connected = realtime.connected_students(self.session_id)
 
         roster = []
         for enrollment in session.course.enrollments.select_related('student').order_by('student_id'):
@@ -291,8 +301,10 @@ class InstructorConsumer(AsyncWebsocketConsumer):
                 "smoothed_emotion": pred.smoothed_emotion if pred else 'neutral',
                 "attention": round(pred.smoothed_attention, 2) if pred else 0.0,
                 "confidence": round(pred.confidence, 2) if pred else 0.0,
-                "online": bool(pred and pred.timestamp >= online_after),
+                # A streaming student is online even when no model produces predictions
+                "online": student.id in connected or bool(pred and pred.timestamp >= online_after),
                 "has_data": bool(pred),
+                "simulated": bool(pred and pred.is_simulated),
             })
 
         snapshot = SessionSnapshot.objects.filter(session=session).order_by('-timestamp').first()

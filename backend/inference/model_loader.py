@@ -34,61 +34,46 @@ class EmotionModel:
             except Exception as e:
                 print(f"[Inference] Failed to load ONNX model {model_path}: {e}")
 
-        print("[Inference] No custom ONNX model found in models/ directory. Using adaptive emotion engine.")
-        self.model_name = "Adaptive Fallback Engine (awaiting ONNX model)"
+        print("[Inference] No ONNX model found in models/ directory. Emotion predictions are disabled.")
+        self.model_name = "No model loaded"
 
     def predict(self, face_bgr):
         """
         Takes 224x224 BGR numpy image.
-        Returns (emotion_label, confidence, emotion_scores).
+        Returns (emotion_label, confidence, emotion_scores), or None when no model is
+        loaded or it fails - predictions are never invented.
         Labels: 'positive' | 'neutral' | 'negative'
         """
-        if self.session is not None:
-            try:
-                # Preprocess: 224x224 BGR -> RGB -> Float32 [0, 1] -> NCHW
-                rgb = face_bgr[:, :, ::-1].astype(np.float32) / 255.0
-                mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-                std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-                norm = (rgb - mean) / std
-                tensor = np.transpose(norm, (2, 0, 1))
-                tensor = np.expand_dims(tensor, axis=0)
+        if self.session is None:
+            return None
+        try:
+            # Preprocess: 224x224 BGR -> RGB -> Float32 [0, 1] -> NCHW
+            rgb = face_bgr[:, :, ::-1].astype(np.float32) / 255.0
+            mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            norm = (rgb - mean) / std
+            tensor = np.transpose(norm, (2, 0, 1))
+            tensor = np.expand_dims(tensor, axis=0)
 
-                outputs = self.session.run(self.output_names, {self.input_name: tensor})
-                raw_logits = outputs[0][0]
-                
-                # Softmax
-                exp_logits = np.exp(raw_logits - np.max(raw_logits))
-                probs = exp_logits / np.sum(exp_logits)
-                
-                labels = ['positive', 'neutral', 'negative']
-                top_idx = int(np.argmax(probs[:3]))
-                conf = float(probs[top_idx])
-                return labels[top_idx], conf, {
-                    'positive': float(probs[0]) if len(probs) > 0 else 0.5,
-                    'neutral': float(probs[1]) if len(probs) > 1 else 0.3,
-                    'negative': float(probs[2]) if len(probs) > 2 else 0.2,
-                }
-            except Exception as ex:
-                print(f"[Inference] ONNX evaluation error: {ex}")
+            outputs = self.session.run(self.output_names, {self.input_name: tensor})
+            raw_logits = outputs[0][0]
 
-        # High-fidelity adaptive telemetry fallback
-        # Evaluates image brightness, contrast, and facial gradient to simulate expression
-        gray = np.mean(face_bgr, axis=2)
-        mean_val = np.mean(gray)
-        std_val = np.std(gray)
+            # Softmax
+            exp_logits = np.exp(raw_logits - np.max(raw_logits))
+            probs = exp_logits / np.sum(exp_logits)
+            if len(probs) < 3:
+                print(f"[Inference] Model returned {len(probs)} outputs; expected 3 (positive, neutral, negative)")
+                return None
 
-        if std_val > 52:
-            emotion = 'positive'
-            conf = 0.94
-            scores = {'positive': 0.88, 'neutral': 0.08, 'negative': 0.04}
-        elif std_val < 38:
-            emotion = 'negative'
-            conf = 0.85
-            scores = {'positive': 0.05, 'neutral': 0.20, 'negative': 0.75}
-        else:
-            emotion = 'neutral'
-            conf = 0.89
-            scores = {'positive': 0.15, 'neutral': 0.75, 'negative': 0.10}
-
-        return emotion, conf, scores
+            labels = ['positive', 'neutral', 'negative']
+            top_idx = int(np.argmax(probs[:3]))
+            conf = float(probs[top_idx])
+            return labels[top_idx], conf, {
+                'positive': float(probs[0]),
+                'neutral': float(probs[1]),
+                'negative': float(probs[2]),
+            }
+        except Exception as ex:
+            print(f"[Inference] ONNX evaluation error: {ex}")
+            return None
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Smile, Meh, Frown } from 'lucide-react';
+import { Smile, Meh, Frown, Minus } from 'lucide-react';
 import { StudentData } from '@/lib/types';
 import { Avatar } from './Avatar';
 
@@ -40,7 +40,12 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
     dot: 'bg-slate-400',
   };
 
-  const Icon = emotionBadgeConfig.icon;
+  // Never show an emotion/attention for a student nothing has been measured (or simulated) for
+  const noData = student.has_data === false;
+  const badge = noData
+    ? { bg: 'bg-slate-50 text-slate-500 border-slate-200', icon: Minus, label: 'No data', dot: 'bg-slate-400' }
+    : emotionBadgeConfig;
+  const Icon = badge.icon;
 
   return (
     <div
@@ -64,20 +69,32 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
         </span>
 
         {/* Live Attention Indicator Dot */}
-        <div className="absolute top-1 right-1 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded-md">
+        {!noData && (
+          <div className="absolute top-1 right-1 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded-md">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                student.attention >= 0.75
+                  ? 'bg-emerald-400'
+                  : student.attention >= 0.5
+                  ? 'bg-amber-400'
+                  : 'bg-rose-400'
+              }`}
+            ></span>
+            <span className="text-[9px] text-white font-mono leading-none">
+              {Math.round(student.attention * 100)}%
+            </span>
+          </div>
+        )}
+
+        {/* Demo Telemetry values are generated, not measured */}
+        {!noData && student.simulated && (
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              student.attention >= 0.75
-                ? 'bg-emerald-400'
-                : student.attention >= 0.5
-                ? 'bg-amber-400'
-                : 'bg-rose-400'
-            }`}
-          ></span>
-          <span className="text-[9px] text-white font-mono leading-none">
-            {Math.round(student.attention * 100)}%
+            className="absolute bottom-1 left-1 bg-violet-600/90 text-white text-[8px] font-bold tracking-wide px-1 py-0.5 rounded leading-none"
+            title="Simulated by Demo Telemetry - not measured from a webcam"
+          >
+            SIM
           </span>
-        </div>
+        )}
       </div>
 
       {/* Student Name */}
@@ -87,10 +104,10 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
 
       {/* Sentiment Status Pill */}
       <div
-        className={`mt-1 flex items-center justify-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium leading-tight w-full max-w-[90px] ${emotionBadgeConfig.bg}`}
+        className={`mt-1 flex items-center justify-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium leading-tight w-full max-w-[90px] ${badge.bg}`}
       >
         <Icon className="w-3 h-3 shrink-0" />
-        <span className="truncate">{emotionBadgeConfig.label}</span>
+        <span className="truncate">{badge.label}</span>
       </div>
     </div>
   );

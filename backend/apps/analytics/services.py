@@ -13,7 +13,7 @@ class SmoothingEngine:
     Uses majority vote for emotion and arithmetic mean for attention.
     """
     @staticmethod
-    def smooth(session, student, current_raw_emotion, current_raw_attention, current_confidence):
+    def smooth(session, student, current_raw_emotion, current_raw_attention, current_confidence, simulated=False):
         now = timezone.now()
         window_start = now - timedelta(seconds=10)
 
@@ -44,6 +44,7 @@ class SmoothingEngine:
             raw_attention=current_raw_attention,
             smoothed_emotion=smoothed_emotion,
             smoothed_attention=smoothed_attention,
+            is_simulated=simulated,
         )
 
         return prediction

@@ -104,14 +104,16 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   setViewMode: (viewMode) => set({ viewMode }),
   setDemoEnabled: (demoEnabled) => set({ demoEnabled }),
 
+  // Once the socket is open the server's init / model.status messages report the real model state
   setConnection: (connection) =>
-    set((state) => ({
-      connection,
-      modelStatus: {
-        ...state.modelStatus,
-        status: connection === 'open' ? 'Active' : connection === 'connecting' ? 'Connecting' : 'Offline',
-      },
-    })),
+    set((state) =>
+      connection === 'open'
+        ? { connection }
+        : {
+            connection,
+            modelStatus: { ...state.modelStatus, status: connection === 'connecting' ? 'Connecting' : 'Offline' },
+          }
+    ),
 
   applyInit: (init) =>
     set((state) => {
@@ -123,7 +125,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
           : state.students,
         snapshot,
         suggestions: init.suggestions || state.suggestions,
-        modelStatus: { ...state.modelStatus, ...(init.model_status || {}), status: 'Active' },
+        modelStatus: { ...state.modelStatus, ...(init.model_status || {}) },
         demoEnabled: init.demo ? init.demo.enabled : state.demoEnabled,
       };
     }),
@@ -134,6 +136,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     const { student_id, name, ...rest } = update;
     const patch: Partial<StudentData> = {
       ...rest,
+      simulated: !!update.simulated, // a real webcam frame replaces earlier demo values
       smoothed_emotion: update.emotion,
       online: true,
       has_data: true,

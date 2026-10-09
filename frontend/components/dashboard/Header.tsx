@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
-import { Clock, Wifi, WifiOff } from 'lucide-react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ChevronDown, Clock, Loader2, LogOut, Wifi, WifiOff } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
+import { useLogout } from '@/lib/useLogout';
 import { Avatar } from './Avatar';
 
 const TICK_MS = 15_000;
@@ -23,11 +24,10 @@ function useNow() {
 }
 
 export function Header() {
-  const { session, user, connection } = useDashboardStore();
+  const { session, connection } = useDashboardStore();
   const now = useNow();
 
   const isLive = session?.status === 'LIVE';
-  const displayName = user?.display_title || user?.name || 'Instructor';
 
   return (
     <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 py-4 px-6 bg-white border-b border-slate-100">
@@ -94,21 +94,77 @@ export function Header() {
           </div>
         </div>
 
-        {/* Instructor Profile Card */}
-        <div className="flex items-center gap-3 pl-2 py-1">
-          <Avatar
-            name={displayName}
-            src={user?.avatar_url}
-            className="w-10 h-10 rounded-full object-cover ring-2 ring-blue-500/20"
-          />
-          <div className="text-left">
-            <div className="text-sm font-semibold text-slate-900 leading-tight">{displayName}</div>
-            <div className="text-[11px] text-slate-500 font-medium leading-tight capitalize">
-              {user?.role ?? 'Instructor'}
-            </div>
-          </div>
-        </div>
+        <ProfileMenu />
       </div>
     </header>
+  );
+}
+
+/** Instructor name/avatar; clicking it opens a small account popup with Log out. */
+function ProfileMenu() {
+  const user = useDashboardStore((s) => s.user);
+  const { logout, loggingOut } = useLogout();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const displayName = user?.display_title || user?.name || 'Instructor';
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex items-center gap-3 pl-2 pr-2 py-1 rounded-xl hover:bg-slate-50 transition-colors"
+      >
+        <Avatar
+          name={displayName}
+          src={user?.avatar_url}
+          className="w-10 h-10 rounded-full object-cover ring-2 ring-blue-500/20"
+        />
+        <div className="text-left">
+          <div className="text-sm font-semibold text-slate-900 leading-tight">{displayName}</div>
+          <div className="text-[11px] text-slate-500 font-medium leading-tight capitalize">
+            {user?.role ?? 'Instructor'}
+          </div>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-2 w-60 bg-white rounded-xl border border-slate-200 shadow-xl z-40 overflow-hidden"
+        >
+          <div className="px-4 py-3 border-b border-slate-100">
+            <p className="text-sm font-semibold text-slate-900 truncate">{displayName}</p>
+            <p className="text-[11px] text-slate-500 truncate">{user?.email || user?.username}</p>
+          </div>
+          <button
+            role="menuitem"
+            onClick={logout}
+            disabled={loggingOut}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+          >
+            {loggingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+            {loggingOut ? 'Logging out…' : 'Log out'}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

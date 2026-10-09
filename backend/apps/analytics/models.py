@@ -26,6 +26,9 @@ class Prediction(models.Model):
     smoothed_emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES)
     smoothed_attention = models.FloatField(default=0.0)  # 0.0 to 1.0
 
+    # True for Demo Telemetry rows, which are generated rather than measured from a webcam
+    is_simulated = models.BooleanField(default=False)
+
     class Meta:
         ordering = ['-timestamp']
         indexes = [
