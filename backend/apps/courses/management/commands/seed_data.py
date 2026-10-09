@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+﻿from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from apps.courses.models import Course, Enrollment, ClassSession
@@ -150,42 +150,21 @@ class Command(BaseCommand):
             )
 
         # 6. Create AI Teaching Suggestions matching the screenshot
-        TeachingSuggestion.objects.get_or_create(
-            session=session,
-            title="Consider adding more examples",
-            defaults={
-                "description": "15% of students look confused. Adding practical examples may help.",
-                "category": "CONFUSION",
-                "icon": "book",
-            }
-        )
-        TeachingSuggestion.objects.get_or_create(
-            session=session,
-            title="Engage students with a quick poll",
-            defaults={
-                "description": "Neutral sentiment is high. Try an interactive poll or question.",
-                "category": "ENGAGEMENT",
-                "icon": "users",
-            }
-        )
-        TeachingSuggestion.objects.get_or_create(
-            session=session,
-            title="Take a short break",
-            defaults={
-                "description": "Attention levels are dropping for some students.",
-                "category": "FATIGUE",
-                "icon": "clock",
-            }
-        )
-        TeachingSuggestion.objects.get_or_create(
-            session=session,
-            title="Encourage participation",
-            defaults={
-                "description": "Ask open-ended questions to improve engagement.",
-                "category": "PARTICIPATION",
-                "icon": "message-square",
-            }
-        )
+        suggestions = [
+            ("Consider adding more examples", "15% of students look confused. Adding practical examples may help.", "CONFUSION", "book"),
+            ("Engage students with a quick poll", "Neutral sentiment is high. Try an interactive poll or question.", "ENGAGEMENT", "users"),
+            ("Take a short break", "Attention levels are dropping for some students.", "FATIGUE", "clock"),
+            ("Encourage participation", "Ask open-ended questions to improve engagement.", "PARTICIPATION", "message-square"),
+        ]
+        for title, description, category, icon in suggestions:
+            if not TeachingSuggestion.objects.filter(session=session, title=title).exists():
+                TeachingSuggestion.objects.create(
+                    session=session,
+                    title=title,
+                    description=description,
+                    category=category,
+                    icon=icon,
+                )
 
         self.stdout.write(self.style.SUCCESS("EMP-EDU demo environment successfully seeded!"))
 

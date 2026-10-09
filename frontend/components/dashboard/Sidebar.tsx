@@ -71,7 +71,7 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
   };
 
   return (
-    <aside className="w-64 bg-[#0B1528] text-slate-300 flex flex-col justify-between min-h-screen border-r border-[#1B294B] shrink-0 select-none">
+    <aside className="w-64 bg-[#0B1528] text-slate-300 flex flex-col justify-between h-screen sticky top-0 self-start overflow-y-auto border-r border-[#1B294B] shrink-0 select-none">
       {/* Brand Header */}
       <div>
         <div className="p-5 flex items-center gap-3 border-b border-[#1B294B]/60">
