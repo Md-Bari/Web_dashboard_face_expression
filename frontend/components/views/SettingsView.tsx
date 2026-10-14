@@ -1,12 +1,12 @@
 'use client';
 
 import React from 'react';
-import { ExternalLink, FolderOpen, LogOut } from 'lucide-react';
-import Link from 'next/link';
+import { FolderOpen, LogOut } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { useLogout } from '@/lib/useLogout';
 import { wsBase } from '@/lib/config';
 import { Avatar } from '@/components/dashboard/Avatar';
+import { InviteStudentsButton } from '@/components/dashboard/InviteStudents';
 import { Card, PageTitle } from './ui';
 
 export function SettingsView() {
@@ -56,13 +56,9 @@ export function SettingsView() {
           <div><dt className="text-slate-500">Instructor socket</dt><dd className="font-semibold text-slate-800 mt-0.5 capitalize">{connection}</dd></div>
           <div><dt className="text-slate-500">Endpoint</dt><dd className="font-mono text-slate-800 mt-0.5 break-all">{wsBase()}/ws/instructor/{session?.id ?? '…'}/</dd></div>
         </dl>
-        <Link
-          href="/student"
-          target="_blank"
-          className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline"
-        >
-          Open the Student Webcam Portal <ExternalLink className="w-3 h-3" />
-        </Link>
+        <div className="mt-3">
+          <InviteStudentsButton />
+        </div>
       </Card>
     </div>
   );

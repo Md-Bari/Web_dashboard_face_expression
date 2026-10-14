@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Loader2, Video } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Sidebar, type TabName } from '@/components/dashboard/Sidebar';
 import { Header } from '@/components/dashboard/Header';
 import { MetricCards } from '@/components/dashboard/MetricCards';
@@ -25,6 +25,7 @@ import { useDashboardStore } from '@/lib/store';
 import { EMPTY_EMOTIONS } from '@/lib/emotions';
 import { SessionSetup } from '@/components/dashboard/SessionSetup';
 import { ScreenShareButton } from '@/components/views/ScreenMonitor';
+import { InviteStudentsButton } from '@/components/dashboard/InviteStudents';
 
 type Boot = { state: 'loading' } | { state: 'ready' } | { state: 'setup' } | { state: 'error'; message: string };
 
@@ -150,15 +151,7 @@ export default function DashboardPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               {!ended && <ScreenShareButton compact />}
-              <Link
-                href="/student"
-                target="_blank"
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 font-semibold hover:bg-blue-600 hover:text-white transition-colors"
-              >
-                <Video className="w-3.5 h-3.5" />
-                <span className="sm:hidden">Student Portal</span>
-                <span className="hidden sm:inline">Open Student Webcam Portal</span>
-              </Link>
+              <InviteStudentsButton />
             </div>
           </div>
 

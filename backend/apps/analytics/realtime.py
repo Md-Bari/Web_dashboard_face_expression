@@ -18,7 +18,7 @@ from channels.layers import get_channel_layer
 from django.conf import settings
 
 from apps.courses.models import ClassSession
-from .inference_engine import get_engine
+from .inference_engine import engine_status
 from .services import AggregationService
 
 TICK_SECONDS = 1.0
@@ -80,7 +80,7 @@ async def _session_loop(session_id):
                 last_status = now
                 await layer.group_send(group, {
                     "type": "broadcast_model_status",
-                    "status": get_engine().status(),
+                    "status": await engine_status(),
                 })
 
             if now - last_prune >= PRUNE_EVERY:

@@ -1,5 +1,5 @@
 import { apiBase } from './config';
-import type { AuthUser, CourseInfo, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
+import type { AuthUser, CourseInfo, JoinInfo, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -31,7 +31,12 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
     let message = res.statusText;
     try {
       const body = await res.json();
-      message = body.detail || body.error || message;
+      // DRF field errors arrive as {field: ["message", ...]}; show the messages themselves
+      const fieldErrors =
+        body && typeof body === 'object' && !body.detail && !body.error
+          ? Object.values(body).flat().filter((m): m is string => typeof m === 'string')
+          : [];
+      message = body.detail || body.error || fieldErrors.join(' ') || message;
     } catch {
       // non-JSON error body
     }
@@ -51,7 +56,23 @@ export const api = {
 
   currentSession: () =>
     request<SessionInfo & { session_code: string; course: CourseInfo }>('/api/sessions/current/'),
+  session: (id: number) => request<SessionInfo & { course: CourseInfo }>(`/api/sessions/${id}/`),
   courses: () => request<CourseInfo[]>('/api/courses/'),
+
+  joinInfo: (code: string) => request<JoinInfo>(`/api/join/${encodeURIComponent(code)}/`),
+  joinEnroll: (code: string) =>
+    request<{ enrolled: boolean; live_session: JoinInfo['live_session'] }>(`/api/join/${encodeURIComponent(code)}/enroll/`, {
+      method: 'POST',
+      body: '{}',
+    }),
+  joinRegister: (
+    code: string,
+    data: { first_name: string; last_name?: string; username: string; email?: string; password: string }
+  ) =>
+    request<{ user: AuthUser; live_session: JoinInfo['live_session'] }>(`/api/join/${encodeURIComponent(code)}/register/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   createCourse: (code: string, title: string) =>
     request<CourseInfo>('/api/courses/', { method: 'POST', body: JSON.stringify({ code, title }) }),
   createSession: (courseId: number, title: string) =>

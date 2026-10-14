@@ -125,7 +125,8 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     set((state) => {
       const snapshot = init.snapshot || state.snapshot;
       return {
-        session: init.session || state.session,
+        // The socket's session lacks the course (join code); keep what the REST call loaded
+        session: init.session ? { ...state.session, ...init.session } : state.session,
         students: init.roster
           ? init.roster.map((s) => (s.online ? { ...s, last_update: Date.now() } : s))
           : state.students,

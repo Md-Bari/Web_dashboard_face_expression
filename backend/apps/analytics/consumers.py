@@ -12,7 +12,7 @@ from django.utils import timezone
 from apps.courses.access import get_instructor_session
 from apps.courses.models import ClassSession
 from apps.analytics import realtime, screen
-from apps.analytics.inference_engine import get_engine
+from apps.analytics.inference_engine import aget_engine, engine_status, get_engine
 from apps.analytics.models import SessionSnapshot, TeachingSuggestion
 from apps.analytics.services import SmoothingEngine, AggregationService, serialize_suggestion
 
@@ -74,7 +74,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
             "type": "ready",
             "student_id": self.user.id,
             "name": display_name(self.user),
-            "model": get_engine().status(),
+            "model": await engine_status(),
         }))
         await self.channel_layer.group_send(self.group_name, {
             "type": "broadcast_presence",
@@ -125,9 +125,10 @@ class StudentConsumer(AsyncWebsocketConsumer):
             await self.close(code=CLOSE_CONSENT_REQUIRED)
             return
 
-        result = await asyncio.to_thread(get_engine().analyze, frame_data)
+        engine = await aget_engine()
+        result = await asyncio.to_thread(engine.analyze, frame_data)
         if result is None:
-            if not get_engine().custom_model_loaded:
+            if not engine.custom_model_loaded:
                 if not self.told_no_model:
                     self.told_no_model = True
                     await self.send(text_data=json.dumps({
@@ -172,7 +173,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
             "attention": smoothed['attention'],
             "confidence": result['confidence'],
             "latency_ms": result['latency_ms'],
-            "model_name": get_engine().emotion_model.model_name,
+            "model_name": engine.emotion_model.model_name,
         }))
 
     # ------------------------------------------------------------------ helpers
@@ -310,10 +311,11 @@ class InstructorConsumer(AsyncWebsocketConsumer):
 
     async def process_screen_frame(self, frame):
         try:
-            faces = await asyncio.to_thread(get_engine().analyze_screen, frame)
+            engine = await aget_engine()
+            faces = await asyncio.to_thread(engine.analyze_screen, frame)
             if faces is None:
                 await self.send(text_data=json.dumps({
-                    "type": "screen.result", "faces": [], "model_loaded": get_engine().custom_model_loaded,
+                    "type": "screen.result", "faces": [], "model_loaded": engine.custom_model_loaded,
                 }))
                 return
 
@@ -336,7 +338,7 @@ class InstructorConsumer(AsyncWebsocketConsumer):
             await self.send(text_data=json.dumps({
                 "type": "screen.result",
                 "model_loaded": True,
-                "latency_ms": get_engine().last_latency_ms,
+                "latency_ms": engine.last_latency_ms,
                 "faces": [
                     {"student_id": u["student_id"], "name": u["name"], "box": f["box"],
                      "emotion": u["emotion"], "attention": u["attention"]}

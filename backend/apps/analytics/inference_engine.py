@@ -9,6 +9,7 @@ emotion or attention values are produced at all.
 
 PRIVACY: frames are decoded in memory only and never written anywhere.
 """
+import asyncio
 import base64
 import glob
 import io
@@ -160,3 +161,18 @@ def get_engine():
             if _engine is None:
                 _engine = InferenceEngine()
     return _engine
+
+
+# Loading (or reloading) the ~200 MB model takes seconds. Async code must never do that on the
+# event loop: it freezes every socket and the Redis channel layer times out. Use these instead.
+async def aget_engine():
+    return await asyncio.to_thread(get_engine)
+
+
+async def engine_status():
+    return await asyncio.to_thread(lambda: get_engine().status())
+
+
+def preload_engine_in_background():
+    """Start loading the model when the server starts, so the first student does not wait for it."""
+    threading.Thread(target=get_engine, name='inference-preload', daemon=True).start()

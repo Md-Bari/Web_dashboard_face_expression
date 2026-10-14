@@ -29,7 +29,15 @@ export interface CourseInfo {
   id: number;
   title: string;
   code: string;
+  /** Random code behind the student join link /join/<join_code> */
+  join_code: string;
   total_students: number;
+}
+
+export interface JoinInfo {
+  course: { code: string; title: string };
+  instructor: string;
+  live_session: { id: number; title: string } | null;
 }
 
 export interface TimelinePoint {
@@ -70,6 +78,7 @@ export interface SessionInfo {
   status: 'SCHEDULED' | 'LIVE' | 'ENDED';
   started_at: string | null;
   ended_at: string | null;
+  course?: CourseInfo;
 }
 
 export interface AuthUser {

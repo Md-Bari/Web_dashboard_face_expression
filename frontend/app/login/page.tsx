@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { GraduationCap, Loader2, Video } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useDashboardStore } from '@/lib/store';
-import { homeFor } from '@/lib/roles';
+import { homeFor, safeNext } from '@/lib/roles';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,11 +16,15 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Already signed in: go straight to the page for this role
+  // Where to go after signing in: a ?next= link (e.g. a class join link) or the role's home
+  const destination = (role: Parameters<typeof homeFor>[0]) =>
+    safeNext(new URLSearchParams(window.location.search).get('next')) ?? homeFor(role);
+
+  // Already signed in: go straight on
   useEffect(() => {
     api
       .me()
-      .then((me) => router.replace(homeFor(me.role)))
+      .then((me) => router.replace(destination(me.role)))
       .catch(() => undefined);
   }, [router]);
 
@@ -31,7 +35,7 @@ export default function LoginPage() {
     try {
       const { user } = await api.login(username.trim(), password);
       setUser(user);
-      router.replace(homeFor(user.role));
+      router.replace(destination(user.role));
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 401)) {
         setError('Incorrect username or password.');

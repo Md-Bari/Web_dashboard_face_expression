@@ -67,21 +67,37 @@ export default function StudentPortal() {
 
   const student = live?.students.find((s) => s.id === studentId) ?? null;
 
-  // A signed-in student joins as themselves; instructors/admins belong on the dashboard;
-  // without an account the open guest roster is used when the server allows it.
+  // A signed-in student joins as themselves (a ?session= from a join link picks the class);
+  // instructors/admins belong on the dashboard; without an account the open guest roster is
+  // used when the server allows it, otherwise the visitor signs in and comes back here.
+  // Until the class is live the page waits and re-checks every few seconds.
   useEffect(() => {
-    const NO_LIVE = 'No live class session right now. Ask your instructor to start the session.';
-    (async () => {
+    const NO_LIVE = 'Waiting for your instructor to start the class. This page connects automatically.';
+    const requested = Number(new URLSearchParams(window.location.search).get('session')) || null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const retry = () => {
+      if (!cancelled) timer = setTimeout(load, 5000);
+    };
+
+    async function load() {
       try {
         const me = await api.me();
+        if (cancelled) return;
         if (me.role !== 'student') {
           router.replace('/');
           return;
         }
         setAccount(true);
         try {
-          const current = await api.currentSession();
-          if (current.status !== 'LIVE') throw new ApiError(404, NO_LIVE);
+          const current = requested ? await api.session(requested) : await api.currentSession();
+          if (cancelled) return;
+          if (current.status !== 'LIVE') {
+            setLoadError(NO_LIVE);
+            retry();
+            return;
+          }
+          setLoadError(null);
           setLive({
             id: current.id,
             title: current.title,
@@ -90,24 +106,44 @@ export default function StudentPortal() {
           });
           setStudentId(me.id);
         } catch {
-          setLoadError(NO_LIVE);
+          setLoadError(
+            requested
+              ? NO_LIVE
+              : 'You are not enrolled in a class yet. Open the join link your instructor shared to join one.'
+          );
+          retry();
         }
         return;
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 401)) {
-          setLoadError('Cannot reach the class server.');
+          setLoadError('Cannot reach the class server. Retrying…');
+          retry();
           return;
         }
       }
       try {
         const info = await api.publicLiveSession();
+        if (cancelled) return;
+        setLoadError(null);
         setLive(info);
         setStudentId(info.students[0]?.id ?? null);
       } catch (e) {
-        if (e instanceof ApiError && e.status === 403) router.replace('/login'); // guest access disabled
-        else setLoadError(NO_LIVE);
+        if (cancelled) return;
+        // Guest access disabled: sign in, then come back to this page
+        if (e instanceof ApiError && e.status === 403) {
+          router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        } else {
+          setLoadError(NO_LIVE);
+          retry();
+        }
       }
-    })();
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [router]);
 
   useEffect(() => {
@@ -272,7 +308,11 @@ export default function StudentPortal() {
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-6 flex flex-col items-center justify-center">
         {loadError ? (
           <div className="flex items-center gap-2 text-sm text-slate-300 bg-slate-950 border border-slate-800 rounded-2xl p-6 max-w-md">
-            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+            {loadError.startsWith('Waiting') ? (
+              <Loader2 className="w-5 h-5 text-blue-400 animate-spin shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+            )}
             {loadError}
           </div>
         ) : !live ? (

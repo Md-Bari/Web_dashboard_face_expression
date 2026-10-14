@@ -4,9 +4,13 @@ from channels.layers import get_channel_layer
 from rest_framework import viewsets, permissions, status, views
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
+from apps.accounts.serializers import UserSerializer
+from apps.accounts.views import set_jwt_cookies
 from .access import user_is_instructor
 from .models import Course, Enrollment, ClassSession
-from .serializers import CourseSerializer, ClassSessionSerializer
+from .serializers import CourseSerializer, ClassSessionSerializer, StudentRegistrationSerializer
 
 
 class IsInstructorOrReadOnly(permissions.BasePermission):
@@ -125,3 +129,73 @@ class PublicLiveSessionView(views.APIView):
         ]
         return Response({'id': session.id, 'title': session.title, 'course': session.course.title,
                          'students': students})
+
+
+# ---------------------------------------------------------------- join link (/join/<code>)
+
+def _live_session(course):
+    session = course.sessions.filter(status='LIVE').order_by('-started_at').first()
+    return {'id': session.id, 'title': session.title} if session else None
+
+
+def _join_course(code):
+    return Course.objects.select_related('instructor').filter(join_code=(code or '').upper()).first()
+
+
+class JoinInfoView(views.APIView):
+    """Public: what a join link leads to (course, instructor, whether a session is live)."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, code):
+        course = _join_course(code)
+        if not course:
+            return Response({'detail': 'This join link is not valid.'}, status=status.HTTP_404_NOT_FOUND)
+        instructor = course.instructor
+        return Response({
+            'course': {'code': course.code, 'title': course.title},
+            'instructor': instructor.display_title or instructor.get_full_name() or instructor.username,
+            'live_session': _live_session(course),
+        })
+
+
+class JoinEnrollView(views.APIView):
+    """A signed-in student joins the course behind the link."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, code):
+        course = _join_course(code)
+        if not course:
+            return Response({'detail': 'This join link is not valid.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'student':
+            return Response({'detail': 'Only student accounts can join a class.'}, status=status.HTTP_403_FORBIDDEN)
+        Enrollment.objects.get_or_create(course=course, student=request.user)
+        return Response({'enrolled': True, 'live_session': _live_session(course)})
+
+
+class JoinRegisterThrottle(AnonRateThrottle):
+    rate = '20/hour'
+
+
+class JoinRegisterView(views.APIView):
+    """Create a student account from a join link, enroll it and sign it in."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [JoinRegisterThrottle]
+
+    def post(self, request, code):
+        course = _join_course(code)
+        if not course:
+            return Response({'detail': 'This join link is not valid.'}, status=status.HTTP_404_NOT_FOUND)
+        serializer = StudentRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        Enrollment.objects.get_or_create(course=course, student=user)
+
+        refresh = RefreshToken.for_user(user)
+        response = Response(
+            {'user': UserSerializer(user).data, 'live_session': _live_session(course)},
+            status=status.HTTP_201_CREATED,
+        )
+        set_jwt_cookies(response, str(refresh.access_token), str(refresh), secure=request.is_secure())
+        return response
