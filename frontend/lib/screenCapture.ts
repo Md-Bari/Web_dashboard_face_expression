@@ -3,11 +3,13 @@
 import { useDashboardStore } from './store';
 import { sendInstructorAction } from './websocket';
 import type { ScreenFace } from './types';
+import { describeMediaError, openCamera, openScreen, type MediaKind } from './media';
 
 /**
- * Instructor screen capture: share a Google Meet / Zoom / Teams window (or any screen) and
- * send a downscaled frame about once a second over the instructor socket. The server finds
- * every face, analyses it and tracks it as an anonymous "Screen face N".
+ * Instructor capture: share a Google Meet / Zoom / Teams window (or any screen), or use a
+ * camera pointed at the classroom, and send a downscaled frame about once a second over the
+ * instructor socket. The server finds every face, analyses it and tracks it as an anonymous
+ * "Screen face N".
  *
  * Lives outside React so sharing keeps running while the instructor switches dashboard tabs.
  * PRIVACY: frames are analysed in server memory only; face thumbnails are cropped here in the
@@ -40,16 +42,15 @@ export function onScreenStream(listener: (s: MediaStream | null) => void) {
   };
 }
 
-export async function startScreenCapture() {
+export async function startCapture(source: MediaKind = 'screen') {
   if (stream) return;
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    store().setScreen({ message: 'This browser cannot share the screen. Use a recent Chrome, Edge or Firefox.' });
-    return;
-  }
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
-  } catch {
-    store().setScreen({ message: 'Screen sharing was cancelled.' });
+    stream =
+      source === 'camera'
+        ? await openCamera({ width: { ideal: 1280 }, height: { ideal: 720 } })
+        : await openScreen();
+  } catch (err) {
+    store().setScreen({ message: describeMediaError(err, source) });
     return;
   }
   video = document.createElement('video');
@@ -61,7 +62,7 @@ export async function startScreenCapture() {
   stream.getVideoTracks()[0]?.addEventListener('ended', stopScreenCapture);
 
   timer = setInterval(sendFrame, FRAME_INTERVAL_MS);
-  store().setScreen({ sharing: true, faces: [], message: 'Looking for faces…' });
+  store().setScreen({ sharing: true, source, faces: [], message: 'Looking for faces…' });
   listeners.forEach((l) => l(stream));
 }
 
@@ -72,7 +73,7 @@ export function stopScreenCapture() {
   stream = null;
   if (video) video.srcObject = null;
   video = null;
-  store().setScreen({ sharing: false, faces: [], message: null, latencyMs: 0 });
+  store().setScreen({ sharing: false, source: null, faces: [], message: null, latencyMs: 0 });
   listeners.forEach((l) => l(null));
 }
 
@@ -121,7 +122,11 @@ export function handleScreenResult(result: {
   let message: string | null = null;
   if (result.error) message = result.error;
   else if (result.model_loaded === false) message = 'No AI model is loaded on the server.';
-  else if (!faces.length) message = 'No faces found. Share the meeting window in gallery view.';
+  else if (!faces.length)
+    message =
+      store().screen.source === 'camera'
+        ? 'No faces found. Point the camera at the class with good lighting.'
+        : 'No faces found. Share the meeting window in gallery view.';
   store().setScreen({ faces, latencyMs: result.latency_ms ?? 0, message });
   if (faces.length) store().applyThumbnails(cropThumbnails(faces));
 }

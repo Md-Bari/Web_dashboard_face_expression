@@ -101,7 +101,7 @@ export function StudentsView() {
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2.5">
                       <Avatar name={s.name} src={s.avatar_url} className="w-7 h-7 rounded-full text-[10px]" imgClassName="object-cover" />
-                      <span className="font-semibold text-slate-800">{s.name}</span>
+                      <span className="font-semibold text-slate-800 whitespace-nowrap">{s.name}</span>
                     </div>
                   </td>
                   <td className="px-3 py-2">

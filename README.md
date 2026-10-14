@@ -38,18 +38,55 @@ An AI-powered e-learning platform providing live emotional, attentional, and eng
 
 ## Quickstart with Docker Compose
 
-Run the entire platform (PostgreSQL, Redis, Django Channels backend, Celery worker/beat, Inference worker, Next.js frontend) with a single command:
+Run the entire platform (PostgreSQL, Redis, Django Channels backend, Celery worker/beat, Inference worker, Next.js frontend, an nginx reverse proxy and a Cloudflare Tunnel) with a single command:
 
 ```bash
 docker-compose up --build
 ```
 
+Everything is served from one origin through **nginx** (`http://localhost:8080` by default). A
+`cloudflared` service publishes that same origin at a random public `https://<name>.trycloudflare.com`
+URL — read it from the tunnel logs:
+
+```bash
+docker compose logs cloudflared
+```
+
+Share that URL with students; it works from anywhere with no port forwarding. The URL changes each
+time the `cloudflared` container restarts (quick tunnels are ephemeral).
+
 ### Services & Endpoints
-- **Instructor Dashboard**: [http://localhost:3000](http://localhost:3000)
-- **Student Webcam Portal**: [http://localhost:3000/student](http://localhost:3000/student)
-- **Backend API & Admin**: [http://localhost:8000](http://localhost:8000)
-- **Instructor sign-in**: [http://localhost:3000/login](http://localhost:3000/login)
-- **Django Admin**: [http://localhost:8000/admin/](http://localhost:8000/admin/)
+- **Instructor Dashboard**: [http://localhost:8080](http://localhost:8080)
+- **Student Webcam Portal**: [http://localhost:8080/student](http://localhost:8080/student)
+- **Backend API & Admin**: [http://localhost:8080](http://localhost:8080) (or directly at [http://localhost:8000](http://localhost:8000))
+- **Instructor sign-in**: [http://localhost:8080/login](http://localhost:8080/login)
+- **Django Admin**: [http://localhost:8080/admin/](http://localhost:8080/admin/)
+- **Public tunnel URL**: see `docker compose logs cloudflared`
+
+> Behind the tunnel nginx routes `/api`, `/admin`, `/static` and `/ws` to Django and everything else
+> to Next.js, so the browser only ever talks to one hostname. That keeps the JWT auth cookies
+> same-site (no CORS) and lets Django recognise HTTPS via `X-Forwarded-Proto`.
+
+### Going live (Cloudflare Tunnel)
+
+The stack ships with a **quick tunnel** (`cloudflared` service, `command: tunnel --url http://nginx:80`).
+It is the fastest way to get a public HTTPS URL, but the URL is random and rotates on restart. For a
+stable hostname, either:
+
+- **Pin a quick tunnel** by reading the URL each run: `docker compose logs cloudflared`.
+- **Use a named tunnel** on your own domain instead of the quick tunnel: replace the `cloudflared`
+  service with one that runs your named tunnel (e.g. `command: tunnel --no-autoupdate run --token <TOKEN>`
+  or mount `~/.cloudflared` and a `config.yml` routing your hostname to `http://nginx:80`), then add
+  `https://your.domain` to `CSRF_TRUSTED_ORIGINS` in `.env` and restart the backend.
+
+Only `/api`, `/admin`, `/static` and `/ws` need to reach Django; the tunnel/nginx already handles that
+for both quick and named tunnels.
+
+### Binding to a different local port
+
+Set `PUBLIC_PORT` in `.env` (defaults to `8080`) if that port is already in use on the host.
+
+
 
 ### First-time setup (real data)
 No demo data is created. Set up your own accounts and classes:
@@ -109,9 +146,14 @@ python manage.py runserver 127.0.0.1:8000   # Daphne ASGI (HTTP + WebSockets)
 ```bash
 cd frontend
 npm install
+# Without Docker the backend is on a different origin, so point the app at it:
+# create frontend/.env.local with:
+#   NEXT_PUBLIC_API_URL=http://localhost:8000
+#   NEXT_PUBLIC_WS_URL=ws://localhost:8000
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) and sign in with your instructor account.
+(No `.env.local` is needed with Docker Compose: nginx serves everything same-origin.)
 
 No Redis, Postgres or Celery is needed locally: the backend falls back to SQLite and an in-memory
 channel layer, and aggregates snapshots inside the ASGI process.

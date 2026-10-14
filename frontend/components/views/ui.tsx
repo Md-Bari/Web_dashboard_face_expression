@@ -19,8 +19,8 @@ export function Card({
   return (
     <section className={`bg-white rounded-2xl border border-slate-100 p-4 shadow-xs ${className}`}>
       {(title || action) && (
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div className="min-w-0 flex-1 basis-48">
             {title && <h2 className="text-sm font-bold text-slate-900">{title}</h2>}
             {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
           </div>

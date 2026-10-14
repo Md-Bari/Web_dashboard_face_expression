@@ -142,9 +142,9 @@ export function ReportsView() {
                 <tbody className="divide-y divide-slate-50">
                   {report.students.map((s) => (
                     <tr key={s.student_id}>
-                      <td className="px-3 py-2 font-semibold text-slate-800">{s.name}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">{s.name}</td>
                       <td className="px-3 py-2"><AttentionBar value={s.avg_attention / 100} /></td>
-                      <td className="px-3 py-2"><EmotionPill emotion={s.dominant_emotion} /></td>
+                      <td className="px-3 py-2 whitespace-nowrap"><EmotionPill emotion={s.dominant_emotion} /></td>
                       <td className="px-3 py-2 font-mono text-slate-600">{s.avg_confidence}%</td>
                       <td className="px-3 py-2 font-mono text-slate-400">{s.samples}</td>
                     </tr>

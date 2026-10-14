@@ -29,7 +29,7 @@ export function StudentGrid() {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold text-slate-900">
-              Live Student Sentiments
+              Live Student Expressions
             </h2>
             {session?.status === 'LIVE' ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">
@@ -43,7 +43,7 @@ export function StudentGrid() {
             )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time sentiment analysis from facial expressions
+            Real-time facial expression analysis
           </p>
         </div>
 

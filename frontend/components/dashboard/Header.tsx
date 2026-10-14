@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, Clock, Loader2, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { ChevronDown, Clock, Loader2, LogOut, Menu, Wifi, WifiOff } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { useLogout } from '@/lib/useLogout';
 import { Avatar } from './Avatar';
@@ -23,26 +23,38 @@ function useNow() {
   return bucket === 0 ? null : new Date(bucket * TICK_MS);
 }
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const { session, connection } = useDashboardStore();
   const now = useNow();
 
   const isLive = session?.status === 'LIVE';
 
   return (
-    <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 py-4 px-6 bg-white border-b border-slate-100">
-      {/* Title & Greeting */}
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+    <header className="sticky top-0 z-30 lg:static flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 md:gap-4 py-3 px-4 md:py-4 md:px-6 bg-white border-b border-slate-100">
+      {/* Title & Greeting (with the menu button on phones/tablets) */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={onMenuClick}
+          aria-label="Open menu"
+          className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 shrink-0"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="min-w-0">
+        <h1 className="text-lg md:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 truncate">
           Welcome, Instructor <span className="text-xl">👋</span>
         </h1>
-        <p className="text-xs md:text-sm text-slate-500 font-normal mt-0.5">
+        <p className="hidden sm:block text-xs md:text-sm text-slate-500 font-normal mt-0.5">
           Real-time Class Analytics Dashboard
         </p>
+        </div>
+        <div className="ml-auto md:hidden shrink-0">
+          <ProfileMenu compact />
+        </div>
       </div>
 
       {/* Right Controls: Session Info, Clock, Instructor Profile */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3">
         {/* Connection indicator */}
         <div
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
@@ -57,12 +69,12 @@ export function Header() {
         </div>
 
         {/* Current Session Card */}
-        <div className="px-4 py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col justify-center shadow-xs">
+        <div className="min-w-0 flex-1 md:flex-none px-3 md:px-4 py-1.5 md:py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col justify-center shadow-xs">
           <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
             Current Session
           </span>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-sm font-semibold text-slate-800">
+          <div className="flex items-center gap-2 mt-0.5 min-w-0">
+            <span className="text-sm font-semibold text-slate-800 truncate">
               {session?.title ?? 'Loading session…'}
             </span>
             {session &&
@@ -80,7 +92,7 @@ export function Header() {
         </div>
 
         {/* Clock & Date Card */}
-        <div className="px-4 py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 flex items-center gap-3 shadow-xs">
+        <div className="hidden sm:flex px-4 py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 items-center gap-3 shadow-xs">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
             <Clock className="w-4 h-4" />
           </div>
@@ -94,14 +106,16 @@ export function Header() {
           </div>
         </div>
 
-        <ProfileMenu />
+        <div className="hidden md:block">
+          <ProfileMenu />
+        </div>
       </div>
     </header>
   );
 }
 
 /** Instructor name/avatar; clicking it opens a small account popup with Log out. */
-function ProfileMenu() {
+function ProfileMenu({ compact = false }: { compact?: boolean }) {
   const user = useDashboardStore((s) => s.user);
   const { logout, loggingOut } = useLogout();
   const [open, setOpen] = useState(false);
@@ -134,15 +148,17 @@ function ProfileMenu() {
         <Avatar
           name={displayName}
           src={user?.avatar_url}
-          className="w-10 h-10 rounded-full object-cover ring-2 ring-blue-500/20"
+          className={`${compact ? 'w-9 h-9' : 'w-10 h-10'} rounded-full object-cover ring-2 ring-blue-500/20`}
         />
-        <div className="text-left">
-          <div className="text-sm font-semibold text-slate-900 leading-tight">{displayName}</div>
-          <div className="text-[11px] text-slate-500 font-medium leading-tight capitalize">
-            {user?.role ?? 'Instructor'}
+        {!compact && (
+          <div className="text-left">
+            <div className="text-sm font-semibold text-slate-900 leading-tight">{displayName}</div>
+            <div className="text-[11px] text-slate-500 font-medium leading-tight capitalize">
+              {user?.role ?? 'Instructor'}
+            </div>
           </div>
-        </div>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        )}
+        {!compact && <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />}
       </button>
 
       {open && (

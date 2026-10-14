@@ -29,12 +29,13 @@ type Connection = 'connecting' | 'open' | 'closed';
 
 export interface ScreenState {
   sharing: boolean;
+  source: 'screen' | 'camera' | null;
   faces: ScreenFace[];
   latencyMs: number;
   message: string | null;
 }
 
-const SCREEN_IDLE: ScreenState = { sharing: false, faces: [], latencyMs: 0, message: null };
+const SCREEN_IDLE: ScreenState = { sharing: false, source: null, faces: [], latencyMs: 0, message: null };
 const SCREEN_FACE_FORGET_MS = 60_000; // drop screen faces not seen for a minute (layout changes renumber them)
 
 interface DashboardStore {

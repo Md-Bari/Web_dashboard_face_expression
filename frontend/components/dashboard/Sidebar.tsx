@@ -17,6 +17,7 @@ import {
   Square,
   GraduationCap,
   Loader2,
+  X,
 } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -41,9 +42,12 @@ interface SidebarProps {
   onTabChange: (tab: TabName) => void;
   /** Called after the session status was changed so the page can show the report. */
   onSessionEnded?: () => void;
+  /** Below the lg breakpoint the sidebar is a slide-in drawer */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProps) {
+export function Sidebar({ currentTab, onTabChange, onSessionEnded, mobileOpen = false, onMobileClose }: SidebarProps) {
   const { modelStatus, session, setSession } = useDashboardStore();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,7 +79,14 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
   };
 
   return (
-    <aside className="w-64 bg-[#0B1528] text-slate-300 flex flex-col justify-between h-screen sticky top-0 self-start overflow-y-auto border-r border-[#1B294B] shrink-0 select-none">
+    <>
+    {/* Phone/tablet: dim the page behind the open drawer; tapping it closes the drawer */}
+    {mobileOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onMobileClose} aria-hidden="true" />}
+    <aside
+      className={`w-64 bg-[#0B1528] text-slate-300 flex flex-col justify-between h-dvh overflow-y-auto border-r border-[#1B294B] shrink-0 select-none
+        fixed inset-y-0 left-0 z-50 transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:sticky lg:top-0 lg:self-start lg:translate-x-0 lg:z-auto lg:h-screen`}
+    >
       {/* Brand Header */}
       <div>
         <div className="p-5 flex items-center gap-3 border-b border-[#1B294B]/60">
@@ -86,6 +97,13 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
             <h1 className="font-bold text-white text-lg tracking-wide flex items-center gap-1">EMP-EDU</h1>
             <p className="text-[11px] text-blue-400 font-medium">AI-Powered E-learning</p>
           </div>
+          <button
+            onClick={onMobileClose}
+            aria-label="Close menu"
+            className="ml-auto p-2 -mr-2 rounded-lg text-slate-400 hover:text-white hover:bg-[#152342] lg:hidden"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Navigation Items */}
@@ -96,7 +114,10 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
             return (
               <button
                 key={item.name}
-                onClick={() => onTabChange(item.name)}
+                onClick={() => {
+                  onTabChange(item.name);
+                  onMobileClose?.();
+                }}
                 className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
@@ -208,5 +229,6 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded }: SidebarProp
         </div>
       )}
     </aside>
+    </>
   );
 }

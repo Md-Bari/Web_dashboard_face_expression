@@ -15,7 +15,27 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-t+sy^-+3sfj@1r9=)tpfy
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [h for h in os.environ.get('ALLOWED_HOSTS', '*').split(',') if h]
+
+# Running behind a reverse proxy / Cloudflare Tunnel (cloudflared). The tunnel
+# terminates TLS and forwards X-Forwarded-Proto, so Django must trust that header
+# to know the original request was HTTPS (affects request.is_secure(), CSRF and
+# secure cookies).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# Django 4+ requires the public origin of HTTPS POSTs (e.g. the admin login and
+# session CSRF checks). Cloudflare quick tunnels use random *.trycloudflare.com
+# hosts, so those are trusted by default; add a real domain via the env var.
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.trycloudflare.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+_extra_csrf = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS += [o.strip() for o in _extra_csrf.split(',') if o.strip()]
 
 # Application definition
 INSTALLED_APPS = [
@@ -42,6 +62,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # Serves collected static files (e.g. the Django admin CSS) under ASGI/Daphne.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -124,7 +146,9 @@ SIMPLE_JWT = {
 # Cookie JWT settings
 AUTH_COOKIE_ACCESS_NAME = 'access_token'
 AUTH_COOKIE_REFRESH_NAME = 'refresh_token'
-AUTH_COOKIE_SECURE = False  # Set to True in HTTPS production
+# Set to True when the site is always served over HTTPS. When behind the tunnel the
+# cookie is also marked Secure automatically based on request.is_secure() (see views).
+AUTH_COOKIE_SECURE = os.environ.get('AUTH_COOKIE_SECURE', 'False') == 'True'
 AUTH_COOKIE_SAMESITE = 'Lax'
 
 # CORS settings
@@ -177,5 +201,15 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise compresses and serves the collected static files under ASGI (Daphne).
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

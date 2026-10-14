@@ -9,10 +9,12 @@ from .models import User
 from .serializers import UserSerializer, CustomTokenObtainPairSerializer, ConsentUpdateSerializer
 
 
-def set_jwt_cookies(response, access_token, refresh_token=None):
+def set_jwt_cookies(response, access_token, refresh_token=None, secure=None):
     access_cookie_name = getattr(settings, 'AUTH_COOKIE_ACCESS_NAME', 'access_token')
     refresh_cookie_name = getattr(settings, 'AUTH_COOKIE_REFRESH_NAME', 'refresh_token')
-    cookie_secure = getattr(settings, 'AUTH_COOKIE_SECURE', False)
+    # Mark cookies Secure whenever the request came in over HTTPS (e.g. through the
+    # Cloudflare tunnel), even if AUTH_COOKIE_SECURE is off for plain local HTTP.
+    cookie_secure = getattr(settings, 'AUTH_COOKIE_SECURE', False) or bool(secure)
     cookie_samesite = getattr(settings, 'AUTH_COOKIE_SAMESITE', 'Lax')
 
     # Access token cookie (typically 15-60 min)
@@ -56,7 +58,7 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             'user': user_data,
         }, status=status.HTTP_200_OK)
 
-        set_jwt_cookies(response, access_token, refresh_token)
+        set_jwt_cookies(response, access_token, refresh_token, secure=request.is_secure())
         return response
 
 
@@ -76,7 +78,7 @@ class CookieTokenRefreshView(TokenRefreshView):
 
         access_token = serializer.validated_data.get('access')
         response = Response({'detail': 'Token refreshed successfully.'}, status=status.HTTP_200_OK)
-        set_jwt_cookies(response, access_token)
+        set_jwt_cookies(response, access_token, secure=request.is_secure())
         return response
 
 

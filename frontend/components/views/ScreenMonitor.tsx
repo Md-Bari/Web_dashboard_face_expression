@@ -1,33 +1,47 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { MonitorUp, MonitorX, ShieldAlert } from 'lucide-react';
+import { Camera, MonitorUp, MonitorX, ShieldAlert } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
-import { onScreenStream, startScreenCapture, stopScreenCapture } from '@/lib/screenCapture';
+import { onScreenStream, startCapture, stopScreenCapture } from '@/lib/screenCapture';
 import { emotionMeta } from '@/lib/emotions';
 import { Card } from './ui';
 
 
-/** Toggle for screen capture; usable anywhere (dashboard ribbon, Live Monitoring). */
+/** Start/stop controls for classroom capture (shared screen or camera); used in the ribbon and Live Monitoring. */
 export function ScreenShareButton({ compact = false }: { compact?: boolean }) {
   const { screen, connection, session } = useDashboardStore();
   const disabled = connection !== 'open' || session?.status !== 'LIVE';
-  return screen.sharing ? (
-    <button
-      onClick={stopScreenCapture}
-      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700"
-    >
-      <MonitorX className="w-3.5 h-3.5" /> {compact ? 'Stop screen' : 'Stop screen monitoring'}
-    </button>
-  ) : (
-    <button
-      onClick={startScreenCapture}
-      disabled={disabled}
-      title={disabled ? 'Start the live session first' : 'Share a Meet / Zoom / Teams window'}
-      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
-    >
-      <MonitorUp className="w-3.5 h-3.5" /> {compact ? 'Monitor screen' : 'Monitor a meeting window'}
-    </button>
+  const button = 'inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 rounded-lg text-xs font-semibold disabled:opacity-50';
+
+  if (screen.sharing) {
+    return (
+      <button onClick={stopScreenCapture} className={`${button} bg-rose-600 text-white hover:bg-rose-700`}>
+        <MonitorX className="w-3.5 h-3.5" />
+        {screen.source === 'camera' ? 'Stop camera' : compact ? 'Stop screen' : 'Stop screen monitoring'}
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <button
+        onClick={() => startCapture('screen')}
+        disabled={disabled}
+        title={disabled ? 'Start the live session first' : 'Share a Meet / Zoom / Teams window'}
+        className={`${button} bg-blue-600 text-white hover:bg-blue-700`}
+      >
+        <MonitorUp className="w-3.5 h-3.5" /> {compact ? 'Monitor screen' : 'Share meeting window'}
+      </button>
+      <button
+        onClick={() => startCapture('camera')}
+        disabled={disabled}
+        title={disabled ? 'Start the live session first' : 'Use this device camera (e.g. pointed at the classroom)'}
+        className={`${button} bg-white text-blue-700 border border-blue-200 hover:bg-blue-50`}
+      >
+        <Camera className="w-3.5 h-3.5" /> Use camera
+      </button>
+      {compact && screen.message && <span className="basis-full text-[11px] font-medium text-amber-700">{screen.message}</span>}
+    </span>
   );
 }
 
@@ -49,8 +63,8 @@ export function ScreenMonitor() {
 
   return (
     <Card
-      title="Screen monitoring"
-      subtitle="Analyse every face in a Google Meet, Zoom or Teams window (use gallery view)"
+      title="Class monitoring"
+      subtitle="Analyse every face in a Google Meet / Zoom / Teams window (gallery view) or from a camera facing the class"
       action={<ScreenShareButton />}
     >
       <div className={`relative w-full bg-slate-900 rounded-xl overflow-hidden ${screen.sharing ? '' : 'hidden'}`}>
@@ -84,7 +98,7 @@ export function ScreenMonitor() {
             ? `${screen.faces.length} face${screen.faces.length === 1 ? '' : 's'} detected${
                 screen.latencyMs ? ` · ${screen.latencyMs} ms` : ''
               }`
-            : 'Not sharing. Faces appear as "Screen face N" tiles and count in the class statistics.'}
+            : 'Off. Each face found becomes a "Screen face N" tile and counts in the class statistics.'}
         </span>
         {screen.message && <span className="text-amber-600 font-medium">{screen.message}</span>}
       </div>

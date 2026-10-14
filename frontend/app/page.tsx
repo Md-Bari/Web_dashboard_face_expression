@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [tab, setTab] = useState<TabName>('Dashboard');
   const [boot, setBoot] = useState<Boot>({ state: 'loading' });
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const { session, connection, setUser, setSession, seedTrend } = useDashboardStore();
 
@@ -118,12 +119,18 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] font-sans antialiased text-slate-800">
-      <Sidebar currentTab={tab} onTabChange={setTab} onSessionEnded={() => setTab('Reports')} />
+      <Sidebar
+        currentTab={tab}
+        onTabChange={setTab}
+        onSessionEnded={() => setTab('Reports')}
+        mobileOpen={menuOpen}
+        onMobileClose={() => setMenuOpen(false)}
+      />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <Header />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header onMenuClick={() => setMenuOpen(true)} />
 
-        <main className="p-5 space-y-4 max-w-[1600px] w-full mx-auto">
+        <main className="p-3 sm:p-5 space-y-4 max-w-[1600px] w-full mx-auto">
           {/* Status ribbon: pipeline state, student portal */}
           <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50/70 border border-blue-100 rounded-xl px-4 py-2 text-xs">
             <div className="flex items-center gap-2 text-blue-900 font-medium">
@@ -141,7 +148,7 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {!ended && <ScreenShareButton compact />}
               <Link
                 href="/student"
@@ -149,7 +156,8 @@ export default function DashboardPage() {
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 font-semibold hover:bg-blue-600 hover:text-white transition-colors"
               >
                 <Video className="w-3.5 h-3.5" />
-                <span>Open Student Webcam Portal</span>
+                <span className="sm:hidden">Student Portal</span>
+                <span className="hidden sm:inline">Open Student Webcam Portal</span>
               </Link>
             </div>
           </div>

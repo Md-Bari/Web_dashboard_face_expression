@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useLogout } from '@/lib/useLogout';
+import { describeMediaError, openCamera } from '@/lib/media';
 import { wsBase } from '@/lib/config';
 import { Avatar } from '@/components/dashboard/Avatar';
 import { emotionMeta, type EmotionType } from '@/lib/emotions';
@@ -173,12 +174,9 @@ export default function StudentPortal() {
 
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
-        audio: false,
-      });
+      stream = await openCamera({ width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' });
     } catch (err) {
-      setMessage(`Could not start the camera: ${err instanceof Error ? err.message : 'permission denied.'}`);
+      setMessage(describeMediaError(err, 'camera'));
       return;
     }
 
@@ -227,8 +225,8 @@ export default function StudentPortal() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-      <header className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-        <div className="flex items-center gap-3">
+      <header className="px-3 py-3 sm:p-4 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {account ? (
             <button
               onClick={() => {
@@ -236,7 +234,7 @@ export default function StudentPortal() {
                 logout();
               }}
               disabled={loggingOut}
-              className="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
+              className="flex items-center gap-2 whitespace-nowrap shrink-0 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Log out</span>
@@ -244,31 +242,34 @@ export default function StudentPortal() {
           ) : (
             <Link
               href="/login"
-              className="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
+              className="flex items-center gap-2 whitespace-nowrap shrink-0 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Sign in</span>
             </Link>
           )}
-          <div className="flex items-center gap-2 pl-3 border-l border-slate-800">
-            <GraduationCap className="w-5 h-5 text-blue-400" />
-            <span className="font-bold text-white text-sm">EMP-EDU Student Portal</span>
+          <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-800 min-w-0">
+            <GraduationCap className="w-5 h-5 text-blue-400 shrink-0" />
+            <span className="font-bold text-white text-sm truncate">
+              <span className="sm:hidden">Student Portal</span>
+              <span className="hidden sm:inline">EMP-EDU Student Portal</span>
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0" title={wsStatus === 'connected' ? 'Live Telemetry Active' : wsStatus}>
           <span
             className={`w-2.5 h-2.5 rounded-full ${
               wsStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : wsStatus === 'connecting' ? 'bg-amber-400' : 'bg-rose-500'
             }`}
           ></span>
-          <span className="text-xs font-medium text-slate-400 capitalize">
+          <span className="hidden sm:inline text-xs font-medium text-slate-400 capitalize">
             {wsStatus === 'connected' ? 'Live Telemetry Active' : wsStatus}
           </span>
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl w-full mx-auto p-6 flex flex-col items-center justify-center">
+      <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-6 flex flex-col items-center justify-center">
         {loadError ? (
           <div className="flex items-center gap-2 text-sm text-slate-300 bg-slate-950 border border-slate-800 rounded-2xl p-6 max-w-md">
             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
@@ -278,7 +279,7 @@ export default function StudentPortal() {
           <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
         ) : !consented ? (
           /* Consent screen */
-          <div className="bg-slate-950 border border-slate-800 rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+          <div className="bg-slate-950 border border-slate-800 rounded-3xl p-5 sm:p-8 max-w-lg w-full shadow-2xl">
             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-400 flex items-center justify-center mb-4">
               <ShieldCheck className="w-6 h-6" />
             </div>
@@ -318,6 +319,12 @@ export default function StudentPortal() {
               <label className="block text-xs font-semibold text-slate-300 mb-2">
                 Join {live.course} as:
               </label>
+              {live.students.length === 0 ? (
+                <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5">
+                  No students are enrolled in this course yet. Ask your instructor to enroll you, or sign in with your
+                  student account.
+                </p>
+              ) : (
               <div className="flex items-center gap-3">
                 {student && (
                   <Avatar name={student.name} src={student.avatar_url} className="w-10 h-10 rounded-full text-xs" imgClassName="object-cover" />
@@ -334,6 +341,7 @@ export default function StudentPortal() {
                   ))}
                 </select>
               </div>
+              )}
             </div>
             )}
 
@@ -348,7 +356,7 @@ export default function StudentPortal() {
           </div>
         ) : (
           /* Live stream */
-          <div className="w-full max-w-xl bg-slate-950 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col items-center">
+          <div className="w-full max-w-xl bg-slate-950 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col items-center">
             <div className="w-full flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-base font-bold text-white">Class Session: {live.title}</h2>
