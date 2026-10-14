@@ -1,0 +1,18 @@
+{
+  "final_models": [
+    "yolo11m"
+  ],
+  "test_acc": 0.7816593886462883,
+  "test_ci95": [
+    0.7248908296943232,
+    0.834061135371179
+  ],
+  "oof_acc": 0.7455391776570985,
+  "old_notebook_test_acc": 0.7424,
+  "prev_best_test_acc": 0.7773,
+  "offline_copies_per_original": 5,
+  "img_size": 256,
+  "tta": {
+    "yolo11m": false
+  }
+}

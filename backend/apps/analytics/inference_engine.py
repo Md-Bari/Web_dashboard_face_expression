@@ -2,9 +2,10 @@
 In-process inference engine used by the Channels consumers.
 
 Wraps the same EmotionModel / GazeTracker classes the standalone worker uses
-(backend/inference). Any .onnx file dropped into backend/inference/models/ is
-picked up automatically (rescanned every few seconds); until then no emotion or
-attention values are produced at all.
+(backend/inference): YuNet face detection + the ONNX expression ensemble described
+by backend/inference/models/deployment_metadata.json. Changes to the model files are
+picked up automatically (rescanned every few seconds); while a model is missing no
+emotion or attention values are produced at all.
 
 PRIVACY: frames are decoded in memory only and never written anywhere.
 """
@@ -29,6 +30,8 @@ from model_loader import EmotionModel  # noqa: E402
 from gaze_tracker import GazeTracker  # noqa: E402
 
 RESCAN_SECONDS = 5
+SCREEN_MAX_FACES = 49       # a full 7x7 Meet/Zoom gallery
+SCREEN_MIN_FACE_PX = 20     # smaller faces are too blurry to classify
 
 
 class InferenceEngine:
@@ -44,7 +47,8 @@ class InferenceEngine:
 
     @staticmethod
     def _scan():
-        return tuple(sorted(glob.glob(os.path.join(MODELS_DIR, '*.onnx'))))
+        files = glob.glob(os.path.join(MODELS_DIR, '*.onnx')) + glob.glob(os.path.join(MODELS_DIR, '*.json'))
+        return tuple(sorted((f, os.path.getmtime(f)) for f in files))
 
     def _maybe_reload(self):
         now = time.time()
@@ -55,8 +59,8 @@ class InferenceEngine:
         if files != self._known_files:
             self._known_files = files
             with self._lock:
-                self.emotion_model.session = None
                 self.emotion_model.load_model()
+                self.emotion_model.warmup()
 
     @property
     def custom_model_loaded(self):
@@ -75,43 +79,76 @@ class InferenceEngine:
         }
 
     def warmup(self):
-        if not self.custom_model_loaded:
-            return
-        blank = np.full((224, 224, 3), 128, dtype=np.uint8)
-        self._run(blank)
+        self.emotion_model.warmup()
 
-    def _run(self, face_bgr):
-        """Telemetry for one face, or None when there is no model to produce it."""
+    def _run(self, frame_bgr):
+        """Telemetry for the face in one frame, or None when there is no model or no face."""
         start = time.perf_counter()
-        prediction = self.emotion_model.predict(face_bgr)
+        prediction = self.emotion_model.predict(frame_bgr)
         if prediction is None:
             return None
-        emotion, confidence, scores = prediction
-        attention = self.gaze.estimate_attention(face_bgr)
+        attention = self.gaze.estimate_attention(prediction['landmarks'])
         self.last_latency_ms = max(1, int((time.perf_counter() - start) * 1000))
         self.frames_processed += 1
         return {
-            'emotion': emotion,
-            'confidence': round(float(confidence), 2),
+            'emotion': prediction['emotion'],
+            'confidence': round(prediction['confidence'], 2),
             'attention': round(float(attention), 2),
-            'scores': scores,
+            'scores': prediction['scores'],
+            'expression': prediction['expression'],
             'latency_ms': self.last_latency_ms,
         }
 
-    def analyze(self, data_url):
-        """Decode a base64 JPEG data URL and return telemetry, or None if undecodable or no model is loaded."""
-        self._maybe_reload()
-        if not self.custom_model_loaded:
-            return None
+    @staticmethod
+    def _decode(data_url):
         try:
             b64 = data_url.split(',', 1)[1] if ',' in data_url else data_url
             img = Image.open(io.BytesIO(base64.b64decode(b64))).convert('RGB')
-            if img.size != (224, 224):
-                img = img.resize((224, 224), Image.Resampling.BILINEAR)
-            face_bgr = np.array(img)[:, :, ::-1]
+            return np.ascontiguousarray(np.array(img)[:, :, ::-1])
         except Exception:
             return None
-        return self._run(face_bgr)
+
+    def analyze_screen(self, data_url):
+        """
+        Every face in a shared-screen frame (e.g. a Meet/Zoom gallery). Returns a list of
+        telemetry dicts with the face box as fractions of the frame, or None when there is
+        no model or the frame cannot be decoded.
+        """
+        self._maybe_reload()
+        if not self.custom_model_loaded:
+            return None
+        frame_bgr = self._decode(data_url)
+        if frame_bgr is None:
+            return None
+        start = time.perf_counter()
+        predictions = self.emotion_model.predict_faces(
+            frame_bgr, max_faces=SCREEN_MAX_FACES, min_size=SCREEN_MIN_FACE_PX,
+        )
+        img_h, img_w = frame_bgr.shape[:2]
+        faces = []
+        for p in predictions:
+            x, y, w, h = p['box']
+            faces.append({
+                'box': [round(x / img_w, 4), round(y / img_h, 4), round(w / img_w, 4), round(h / img_h, 4)],
+                'emotion': p['emotion'],
+                'confidence': round(p['confidence'], 2),
+                'attention': round(float(self.gaze.estimate_attention(p['landmarks'])), 2),
+                'expression': p['expression'],
+            })
+        if faces:
+            self.last_latency_ms = max(1, int((time.perf_counter() - start) * 1000))
+            self.frames_processed += 1
+        return faces
+
+    def analyze(self, data_url):
+        """Decode a base64 JPEG data URL and return telemetry, or None if undecodable, no model or no face."""
+        self._maybe_reload()
+        if not self.custom_model_loaded:
+            return None
+        frame_bgr = self._decode(data_url)
+        if frame_bgr is None:
+            return None
+        return self._run(frame_bgr)
 
 
 _engine = None

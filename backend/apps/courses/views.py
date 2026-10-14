@@ -10,17 +10,20 @@ from .serializers import CourseSerializer, ClassSessionSerializer
 
 
 class IsInstructorOrReadOnly(permissions.BasePermission):
+    """Everyone signed in may read what get_queryset exposes; only instructors/admins may write."""
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
+        if not (request.user and request.user.is_authenticated):
+            return False
+        return request.method in permissions.SAFE_METHODS or user_is_instructor(request.user)
 
 
 class CourseViewSet(viewsets.ModelViewSet):
     serializer_class = CourseSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsInstructorOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser:
+        if user.is_admin:
             return Course.objects.all()
         if user.role == 'instructor':
             # Instructors only see their own courses
@@ -34,11 +37,11 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 class ClassSessionViewSet(viewsets.ModelViewSet):
     serializer_class = ClassSessionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsInstructorOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser:
+        if user.is_admin:
             return ClassSession.objects.all()
         if user.role == 'instructor':
             # Instructors only see sessions of their courses
@@ -104,7 +107,7 @@ class ClassSessionViewSet(viewsets.ModelViewSet):
 class PublicLiveSessionView(views.APIView):
     """
     Minimal, unauthenticated description of the currently LIVE session so the student
-    portal can offer a roster to join as (demo flow). Exposes names and avatars only.
+    portal can offer a roster to join as (guest flow). Exposes names and avatars only.
     """
     authentication_classes = []
     permission_classes = [permissions.AllowAny]

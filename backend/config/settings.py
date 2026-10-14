@@ -156,11 +156,9 @@ else:
     }
 
 # Real-time runtime
-# DEMO_SIMULATION: drive enrolled students who are not streaming a webcam with simulated telemetry
 # INPROCESS_AGGREGATOR: aggregate snapshots inside the ASGI server (turn off when Celery beat does it)
-DEMO_SIMULATION = os.environ.get('DEMO_SIMULATION', 'True') == 'True'
 INPROCESS_AGGREGATOR = os.environ.get('INPROCESS_AGGREGATOR', 'True') == 'True'
-# ALLOW_GUEST_STUDENTS: open student portal (pick a roster name, no login). Development/demo only.
+# ALLOW_GUEST_STUDENTS: open student portal (pick a roster name, no login). Development only.
 ALLOW_GUEST_STUDENTS = os.environ.get('ALLOW_GUEST_STUDENTS', str(DEBUG)) == 'True'
 
 # Celery Configuration

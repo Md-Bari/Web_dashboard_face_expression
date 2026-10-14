@@ -1,0 +1,20 @@
+{
+  "n_copies": 4272,
+  "n_originals": 229,
+  "aug_test_acc": 0.7621722846441947,
+  "aug_test_ci95": [
+    0.7219352421137188,
+    0.8206630483976389
+  ],
+  "aug_macro_f1": 0.7603755437744274,
+  "originals_test_acc": 0.7816593886462883,
+  "consistency_with_original": 0.9080056179775281,
+  "per_class_aug_acc": {
+    "angry": 0.7628,
+    "fear": 0.7864,
+    "happy": 0.9234,
+    "neutral": 0.8302,
+    "sad": 0.5425,
+    "surprise": 0.7318
+  }
+}

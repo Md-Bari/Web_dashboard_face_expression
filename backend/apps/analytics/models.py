@@ -8,6 +8,10 @@ class Prediction(models.Model):
     Stores processed telemetry for a student face frame.
     PRIVACY GUARANTEE: Never stores raw images or video streams.
     Only stores the computed emotion label and attention numeric score.
+
+    A row belongs either to an enrolled `student` (their own webcam) or to an anonymous
+    `participant` face tracked in the instructor's screen capture (e.g. a Meet/Zoom
+    gallery), keyed like "screen-3".
     """
     EMOTION_CHOICES = (
         ('positive', 'Positive'),
@@ -16,7 +20,10 @@ class Prediction(models.Model):
     )
 
     session = models.ForeignKey(ClassSession, on_delete=models.CASCADE, related_name='predictions')
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='predictions')
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='predictions', null=True, blank=True,
+    )
+    participant = models.CharField(max_length=32, blank=True, default='')
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
 
     raw_emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES)
@@ -26,17 +33,16 @@ class Prediction(models.Model):
     smoothed_emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES)
     smoothed_attention = models.FloatField(default=0.0)  # 0.0 to 1.0
 
-    # True for Demo Telemetry rows, which are generated rather than measured from a webcam
-    is_simulated = models.BooleanField(default=False)
-
     class Meta:
         ordering = ['-timestamp']
         indexes = [
             models.Index(fields=['session', 'student', '-timestamp']),
+            models.Index(fields=['session', 'participant', '-timestamp']),
         ]
 
     def __str__(self):
-        return f"{self.student.username} - {self.smoothed_emotion} ({self.smoothed_attention:.2f})"
+        who = self.student.username if self.student_id else self.participant
+        return f"{who} - {self.smoothed_emotion} ({self.smoothed_attention:.2f})"
 
 
 class SessionSnapshot(models.Model):

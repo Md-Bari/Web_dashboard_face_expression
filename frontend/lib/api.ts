@@ -1,5 +1,5 @@
 import { apiBase } from './config';
-import type { AuthUser, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
+import type { AuthUser, CourseInfo, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -49,7 +49,13 @@ export const api = {
   logout: () => request<unknown>('/api/auth/logout/', { method: 'POST', body: '{}' }),
   me: () => request<AuthUser>('/api/auth/me/'),
 
-  currentSession: () => request<SessionInfo & { session_code: string }>('/api/sessions/current/'),
+  currentSession: () =>
+    request<SessionInfo & { session_code: string; course: CourseInfo }>('/api/sessions/current/'),
+  courses: () => request<CourseInfo[]>('/api/courses/'),
+  createCourse: (code: string, title: string) =>
+    request<CourseInfo>('/api/courses/', { method: 'POST', body: JSON.stringify({ code, title }) }),
+  createSession: (courseId: number, title: string) =>
+    request<SessionInfo>('/api/sessions/', { method: 'POST', body: JSON.stringify({ course_id: courseId, title }) }),
   endSession: (id: number) => request<{ status: string }>(`/api/sessions/${id}/end/`, { method: 'POST', body: '{}' }),
   startSession: (id: number) => request<{ status: string }>(`/api/sessions/${id}/start/`, { method: 'POST', body: '{}' }),
 

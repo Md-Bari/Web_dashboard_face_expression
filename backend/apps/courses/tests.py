@@ -65,3 +65,27 @@ class CourseInstructorIsolationTestCase(TestCase):
         self.assertIn('AL202-L1', session_codes)
         self.assertNotIn('DS201-L5', session_codes)
 
+
+
+class RoleAccessTestCase(CourseInstructorIsolationTestCase):
+    def test_superuser_is_admin_and_sees_everything(self):
+        admin = User.objects.create_superuser('root', 'root@example.org', 'x')
+        self.assertEqual(admin.role, 'admin')
+        self.client.force_authenticate(user=admin)
+        response = self.client.get('/api/sessions/')
+        self.assertEqual(len(response.data), 2)
+
+    def test_student_cannot_create_courses(self):
+        student = User.objects.create_user(username='stu', password='x', role='student')
+        self.client.force_authenticate(user=student)
+        response = self.client.post('/api/courses/', {'title': 'Mine', 'code': 'X1'}, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_instructor_creates_session_for_own_course_only(self):
+        self.client.force_authenticate(user=self.instructor1)
+        ok = self.client.post('/api/sessions/', {'course_id': self.course1.id, 'title': 'Lecture 6'}, format='json')
+        self.assertEqual(ok.status_code, 201)
+        self.assertTrue(ok.data['session_code'].startswith('CS201-'))
+        self.assertEqual(ok.data['status'], 'SCHEDULED')
+        denied = self.client.post('/api/sessions/', {'course_id': self.course2.id, 'title': 'Hijack'}, format='json')
+        self.assertEqual(denied.status_code, 400)

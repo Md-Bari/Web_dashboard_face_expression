@@ -1,0 +1,25 @@
+{
+  "classes": [
+    "angry",
+    "fear",
+    "happy",
+    "neutral",
+    "sad",
+    "surprise"
+  ],
+  "image_size": 256,
+  "output": "probabilities",
+  "input": "float32 [N,3,S,S] RGB 0-1; YuNet face crop, short side -> S, centre crop",
+  "face_detector": "face_detection_yunet_2023mar.onnx",
+  "face_margin": 0.2,
+  "grayscale_inside_model": false,
+  "members": [
+    "yolo11m_fold0",
+    "yolo11m_fold1",
+    "yolo11m_fold2",
+    "yolo11m_fold3",
+    "yolo11m_fold4"
+  ],
+  "test_acc": 0.7816593886462883,
+  "offline_copies_per_original": 5
+}

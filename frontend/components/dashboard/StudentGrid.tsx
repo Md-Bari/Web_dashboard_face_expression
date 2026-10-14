@@ -141,7 +141,7 @@ export function StudentGrid() {
                     <p className="text-[11px] text-slate-500">
                       {student.has_data === false
                         ? 'No data'
-                        : `Attention: ${Math.round(student.attention * 100)}%${student.simulated ? ' · simulated' : ''}`}
+                        : `Attention: ${Math.round(student.attention * 100)}%`}
                     </p>
                   </div>
                 </div>
@@ -216,8 +216,8 @@ export function StudentGrid() {
             <div className="space-y-2.5 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-100">
               <div className="flex justify-between">
                 <span className="text-slate-500">Data source</span>
-                <span className={`font-bold ${selectedStudent.simulated ? 'text-violet-700' : 'text-slate-900'}`}>
-                  {selectedStudent.simulated ? 'Simulated (Demo Telemetry)' : 'Webcam + AI model'}
+                <span className="font-bold text-slate-900">
+                  {selectedStudent.source === 'screen' ? 'Screen capture + AI model' : 'Webcam + AI model'}
                 </span>
               </div>
               <div className="flex justify-between">

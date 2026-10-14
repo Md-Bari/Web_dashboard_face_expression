@@ -5,6 +5,7 @@ import { Activity, UserCheck, Sparkles, Info, Radio } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { formatClock } from '@/lib/format';
 import { StudentGrid } from '@/components/dashboard/StudentGrid';
+import { ScreenMonitor } from './ScreenMonitor';
 import { Card, PageTitle } from './ui';
 
 const KIND_ICON = {
@@ -16,13 +17,17 @@ const KIND_ICON = {
 
 export function LiveMonitoringView() {
   const { activity, students, modelStatus } = useDashboardStore();
-  const online = students.filter((s) => s.online).length;
+  const enrolled = students.filter((s) => s.source !== 'screen');
+  const online = enrolled.filter((s) => s.online).length;
+  const screenFaces = students.length - enrolled.length;
 
   return (
     <div className="space-y-4">
       <PageTitle
         title="Live Monitoring"
-        subtitle={`${online} of ${students.length} students streaming telemetry`}
+        subtitle={`${online} of ${enrolled.length} students streaming telemetry${
+          screenFaces ? ` · ${screenFaces} faces from screen capture` : ''
+        }`}
         action={
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
             <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
@@ -31,7 +36,8 @@ export function LiveMonitoringView() {
         }
       />
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-8">
+        <div className="xl:col-span-8 space-y-4">
+          <ScreenMonitor />
           <StudentGrid />
         </div>
         <div className="xl:col-span-4">

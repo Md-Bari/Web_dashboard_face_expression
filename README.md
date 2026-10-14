@@ -10,7 +10,7 @@ An AI-powered e-learning platform providing live emotional, attentional, and eng
 
 - **Frontend**: Next.js 16 (App Router, TypeScript, Tailwind CSS, Lucide Icons, Recharts, Zustand) in `/frontend`
 - **Backend**: Django 5 + Django REST Framework + Django Channels (Daphne ASGI) + Celery + Redis + PostgreSQL in `/backend`
-- **AI Inference Worker**: Python standalone service (ONNX Runtime, OpenCV, PyGaze/MediaPipe gaze tracking) in `/backend/inference`
+- **AI Inference Worker**: Python standalone service (ONNX Runtime, OpenCV YuNet face detection, head-pose attention) in `/backend/inference`
 - **Orchestration**: Docker Compose
 
 ---
@@ -19,9 +19,9 @@ An AI-powered e-learning platform providing live emotional, attentional, and eng
 
 1. **Student Camera Ingestion**:
    - Students navigate to the `/student` portal and must grant **explicit camera & privacy consent**.
-   - Student browser extracts 224x224 face crops at 1–2 fps over WebSocket `ws://backend/ws/student/{session_id}/`.
+   - Student browser sends webcam frames (at most 640 px wide) at 1–2 fps over WebSocket `ws://backend/ws/student/{session_id}/`.
 2. **AI Inference & Gaze Tracking**:
-   - The backend runs the inference engine in-process (ONNX Runtime; custom YOLO/emotion model or adaptive fallback) and computes attention scores (0.0 to 1.0) simulating PyGaze. The standalone worker in `backend/inference` is the same code for scaling inference out via Redis.
+   - The backend runs the inference engine in-process: YuNet finds the face, the YOLO11m expression ensemble (ONNX Runtime) classifies it, and attention (0.0 to 1.0) is computed from head pose using the face landmarks. Frames without a face produce no data. The standalone worker in `backend/inference` is the same code for scaling inference out via Redis.
    - **Privacy Guarantee**: No raw video is stored on disk or in the database.
 3. **Smoothing & Aggregation**:
    - Telemetries are smoothed over a 10-second rolling window (`Prediction` records).
@@ -48,8 +48,45 @@ docker-compose up --build
 - **Instructor Dashboard**: [http://localhost:3000](http://localhost:3000)
 - **Student Webcam Portal**: [http://localhost:3000/student](http://localhost:3000/student)
 - **Backend API & Admin**: [http://localhost:8000](http://localhost:8000)
-- **Instructor sign-in**: [http://localhost:3000/login](http://localhost:3000/login) - `instructor` / `password123`
-- **Django Admin Login**: `admin` / `password123`
+- **Instructor sign-in**: [http://localhost:3000/login](http://localhost:3000/login)
+- **Django Admin**: [http://localhost:8000/admin/](http://localhost:8000/admin/)
+
+### First-time setup (real data)
+No demo data is created. Set up your own accounts and classes:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+Then in the Django admin:
+1. **Users**: add the instructor (role `instructor`) and each student (role `student`).
+2. **Courses**: enroll the students in a course (inline at the bottom).
+
+An instructor without a session gets a setup screen on the dashboard to create a course and start a
+live session.
+
+### Sign-in and roles
+Everyone uses the same page, `/login`, and is sent to the right place by role:
+
+| Role | Lands on | Can |
+| --- | --- | --- |
+| `admin` (any superuser) | Dashboard | See and run every course and session |
+| `instructor` | Dashboard | Create/run sessions for their own courses |
+| `student` | `/student` | Stream their own webcam to the live session of a course they're enrolled in |
+
+The guest portal (pick a name from the roster, no account) is only available while `ALLOW_GUEST_STUDENTS`
+is on (defaults to `DEBUG`).
+
+### Monitoring an online class (Meet / Zoom / Teams)
+In **Live Monitoring** (or *Monitor screen* in the dashboard ribbon), share the meeting window in gallery
+view. About once a second a frame goes to the server, which detects every face (up to 49), classifies it
+and tracks it as an anonymous **Screen face N** tile. These faces count in the class statistics, suggestions
+and reports. Faces are numbered by position, so a gallery reshuffle can renumber them. Tell participants
+their video is being analysed.
+
+Upgrading from an older version that ran `seed_data`? Remove the demo accounts, course and analytics with
+`python manage.py purge_demo_data` (lists them) and `python manage.py purge_demo_data --yes` (deletes them).
+Migration `analytics.0003` already deletes all simulated predictions.
 
 ---
 
@@ -64,7 +101,7 @@ venv\Scripts\activate          # On Windows
 
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py seed_data      # Seeds instructor Dr. Laohakangvalvit, 28 students, a LIVE session
+python manage.py createsuperuser   # then add users, courses and sessions in /admin (see above)
 python manage.py runserver 127.0.0.1:8000   # Daphne ASGI (HTTP + WebSockets)
 ```
 
@@ -74,31 +111,37 @@ cd frontend
 npm install
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) and sign in as `instructor` / `password123`.
+Open [http://localhost:3000](http://localhost:3000) and sign in with your instructor account.
 
 No Redis, Postgres or Celery is needed locally: the backend falls back to SQLite and an in-memory
 channel layer, and aggregates snapshots inside the ASGI process.
 
-### Demo telemetry vs. real webcams
-- Enrolled students who are **not** streaming get simulated telemetry (toggle: *Demo Telemetry* in the
-  dashboard ribbon or Settings; env `DEMO_SIMULATION=False` to start with it off).
+### Student webcams
+- All telemetry comes from real webcams. Students who are not streaming show *No data*.
 - Open [http://localhost:3000/student](http://localhost:3000/student), pick a name, grant consent and start
-  the webcam: that student then uses real frames through the inference engine instead.
+  the webcam: frames go through the inference engine.
 - `ALLOW_GUEST_STUDENTS` (defaults to `DEBUG`) controls the open student portal; turn it off in production
   and require student logins.
 
 ---
 
-## Adding Your Custom YOLO ONNX Model
+## AI Models
 
-Place your trained model file into:
-```
-backend/inference/models/your_model.onnx
-```
-The engine rescans this directory every few seconds, so a model dropped in while the server runs is picked
-up without a restart (Settings and the sidebar then show *Custom ONNX*). If none is present, it uses the
-built-in adaptive telemetry engine. Input `[1,3,224,224]`, output 3 logits (positive, neutral, negative);
-adjust `backend/inference/model_loader.py` if your YOLO head differs.
+`backend/inference/models/` holds:
+
+| File | Purpose |
+| --- | --- |
+| `yolo_face_expression_ensemble.onnx` | 5-fold YOLO11m expression classifier, input `[N,3,256,256]` RGB 0-1, output probabilities |
+| `face_detection_yunet_2023mar.onnx` | YuNet face detector (OpenCV `FaceDetectorYN`) |
+| `deployment_metadata.json` | Classes, image size, face margin and detector file name used by the loader |
+
+Pipeline (`backend/inference/model_loader.py`): detect the largest face, grow the box by `face_margin`,
+resize the short side to `image_size`, centre crop, classify. The six expressions are grouped for the
+dashboard as **positive** (happy, surprise), **neutral**, and **negative** (angry, fear, sad). Attention
+comes from head yaw/pitch measured on the YuNet landmarks (`gaze_tracker.py`).
+
+The engine rescans this directory every few seconds, so replaced model files are picked up without a
+restart. If a model file is missing, no emotion or attention data is produced at all.
 
 ---
 

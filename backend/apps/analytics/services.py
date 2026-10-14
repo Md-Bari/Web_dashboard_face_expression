@@ -9,19 +9,20 @@ from apps.courses.models import ClassSession
 
 class SmoothingEngine:
     """
-    Smooths predictions over a 10-second rolling window per student.
-    Uses majority vote for emotion and arithmetic mean for attention.
+    Smooths predictions over a 10-second rolling window per student (or per screen
+    participant when `student` is None). Majority vote for emotion, mean for attention.
     """
     @staticmethod
-    def smooth(session, student, current_raw_emotion, current_raw_attention, current_confidence, simulated=False):
+    def smooth(session, student, current_raw_emotion, current_raw_attention, current_confidence, participant=''):
         now = timezone.now()
         window_start = now - timedelta(seconds=10)
 
+        who = {'student': student} if student is not None else {'student__isnull': True, 'participant': participant}
         recent_predictions = list(
             Prediction.objects.filter(
                 session=session,
-                student=student,
-                timestamp__gte=window_start
+                timestamp__gte=window_start,
+                **who,
             ).values_list('raw_emotion', 'raw_attention')
         )
 
@@ -39,12 +40,12 @@ class SmoothingEngine:
         prediction = Prediction.objects.create(
             session=session,
             student=student,
+            participant='' if student is not None else participant,
             raw_emotion=current_raw_emotion,
             confidence=current_confidence,
             raw_attention=current_raw_attention,
             smoothed_emotion=smoothed_emotion,
             smoothed_attention=smoothed_attention,
-            is_simulated=simulated,
         )
 
         return prediction
@@ -83,6 +84,18 @@ class AggregationService:
                 if len(latest) == len(enrolled_ids):
                     break
         return latest, len(enrolled_ids)
+
+    @staticmethod
+    def latest_screen_predictions(session, window_seconds):
+        """Latest prediction per screen-capture participant seen within the window."""
+        qs = Prediction.objects.filter(
+            session=session, student__isnull=True,
+            timestamp__gte=timezone.now() - timedelta(seconds=window_seconds),
+        ).exclude(participant='')
+        latest = {}
+        for pred in qs.order_by('-timestamp').iterator():
+            latest.setdefault(pred.participant, pred)
+        return latest
 
     @staticmethod
     def build_timeline(session_id, limit=None):
@@ -130,7 +143,8 @@ class AggregationService:
         latest, _ = AggregationService.latest_predictions(
             session, AggregationService.ACTIVE_WINDOW_SECONDS
         )
-        preds = list(latest.values())
+        screen = AggregationService.latest_screen_predictions(session, AggregationService.ACTIVE_WINDOW_SECONDS)
+        preds = list(latest.values()) + list(screen.values())
         total_active = len(preds)
 
         if preds:

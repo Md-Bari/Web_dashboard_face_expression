@@ -10,8 +10,24 @@ export interface StudentData {
   confidence: number; // 0.0 - 1.0
   online: boolean;
   has_data?: boolean;
-  simulated?: boolean;
+  /** 'screen' = anonymous face found in the instructor's shared screen (negative id) */
+  source?: 'student' | 'screen';
   last_update?: number; // epoch ms
+}
+
+export interface ScreenFace {
+  student_id: number;
+  name: string;
+  box: [number, number, number, number]; // x, y, w, h as fractions of the frame
+  emotion: EmotionType;
+  attention: number;
+}
+
+export interface CourseInfo {
+  id: number;
+  title: string;
+  code: string;
+  total_students: number;
 }
 
 export interface TimelinePoint {

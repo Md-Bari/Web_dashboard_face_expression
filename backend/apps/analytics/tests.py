@@ -185,15 +185,90 @@ class ConsumerTestCase(TransactionTestCase):
         self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 0)
         await comm.disconnect()
 
-    async def test_student_frame_produces_telemetry_and_persists_prediction(self):
+    async def test_frame_without_face_produces_no_data(self):
         engine = get_engine()
         with mock.patch.object(engine.emotion_model, 'session', object()), \
-                mock.patch.object(engine.emotion_model, 'predict',
-                                  return_value=('positive', 0.9, {'positive': 0.9, 'neutral': 0.07, 'negative': 0.03})):
+                mock.patch.object(engine.emotion_model, 'predict', return_value=None):
+            comm, reply = await self.send_one_frame()
+        self.assertEqual(reply['type'], 'face.missing')
+        self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 0)
+        await comm.disconnect()
+
+    async def test_student_frame_produces_telemetry_and_persists_prediction(self):
+        engine = get_engine()
+        frontal = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
+        prediction = {
+            'emotion': 'positive', 'confidence': 0.9,
+            'scores': {'positive': 0.9, 'neutral': 0.07, 'negative': 0.03},
+            'expression': 'happy', 'expressions': {}, 'landmarks': frontal,
+        }
+        with mock.patch.object(engine.emotion_model, 'session', object()), \
+                mock.patch.object(engine.emotion_model, 'predict', return_value=prediction):
             comm, telemetry = await self.send_one_frame()
         self.assertEqual(telemetry['type'], 'telemetry')
         self.assertEqual(telemetry['emotion'], 'positive')
-        self.assertTrue(0 <= telemetry['attention'] <= 1)
-        pred = await Prediction.objects.aget(student=self.student)
-        self.assertFalse(pred.is_simulated)
+        self.assertEqual(telemetry['attention'], 1.0)
+        self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 1)
+        await comm.disconnect()
+
+
+class ScreenParticipantTestCase(TestCase):
+    def setUp(self):
+        self.instructor = User.objects.create_user(username='inst', password='x', role='instructor')
+        self.course = Course.objects.create(title='Online', code='ON1', instructor=self.instructor)
+        self.session = ClassSession.objects.create(course=self.course, title='Zoom', session_code='ON1-1', status='LIVE')
+
+    def test_tracker_keeps_numbers_for_faces_that_stay_put(self):
+        from apps.analytics.screen import ScreenFaceTracker
+        tracker = ScreenFaceTracker()
+        boxes = [(0.1, 0.1, 0.1, 0.15), (0.6, 0.1, 0.1, 0.15)]
+        self.assertEqual(tracker.assign(boxes, now=0), [1, 2])
+        moved = [(0.605, 0.11, 0.1, 0.15), (0.1, 0.1, 0.1, 0.15), (0.35, 0.6, 0.1, 0.15)]
+        self.assertEqual(tracker.assign(moved, now=1), [2, 1, 3])
+        self.assertEqual(tracker.assign(boxes[:1], now=30), [4])  # old tracks expired
+
+    def test_screen_faces_count_in_snapshot_and_report(self):
+        from apps.analytics.views import build_report
+        SmoothingEngine.smooth(self.session, None, 'positive', 0.9, 0.8, participant='screen-1')
+        SmoothingEngine.smooth(self.session, None, 'negative', 0.4, 0.7, participant='screen-2')
+        snapshot = AggregationService.aggregate_session(self.session.id)
+        self.assertEqual(snapshot.total_students, 2)
+        self.assertEqual(snapshot.positive_count, 1)
+        names = sorted(s['name'] for s in build_report(self.session)['students'])
+        self.assertEqual(names, ['Screen face 1', 'Screen face 2'])
+
+
+class ScreenCaptureConsumerTestCase(ConsumerTestCase):
+    async def test_screen_frame_creates_screen_participants(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        token = str(RefreshToken.for_user(self.owner).access_token)
+        comm = WebsocketCommunicator(
+            self.app, f'/ws/instructor/{self.session.id}/', headers=[(b'cookie', f'access_token={token}'.encode())],
+        )
+        connected, _ = await comm.connect()
+        self.assertTrue(connected)
+        init = json.loads((await comm.receive_output(timeout=60))['text'])
+        self.assertEqual(init['type'], 'init')
+
+        faces = [
+            {'box': [0.1, 0.1, 0.1, 0.15], 'emotion': 'positive', 'confidence': 0.9, 'attention': 0.95, 'expression': 'happy'},
+            {'box': [0.6, 0.1, 0.1, 0.15], 'emotion': 'negative', 'confidence': 0.8, 'attention': 0.4, 'expression': 'sad'},
+        ]
+        with mock.patch.object(get_engine(), 'analyze_screen', return_value=faces):
+            await comm.send_to(text_data=json.dumps({'action': 'screen_frame', 'image': make_frame()}))
+            # The session loop interleaves snapshots/status; collect until both kinds have arrived
+            updates, result = [], None
+            for _ in range(20):
+                message = json.loads((await comm.receive_output(timeout=10))['text'])
+                if message['type'] == 'student.update':
+                    updates.append(message['data'])
+                elif message['type'] == 'screen.result':
+                    result = message
+                if result and len(updates) == 2:
+                    break
+
+        self.assertEqual(sorted(u['name'] for u in updates), ['Screen face 1', 'Screen face 2'])
+        self.assertTrue(all(u['student_id'] < 0 and u['source'] == 'screen' for u in updates))
+        self.assertEqual([f['box'] for f in result['faces']], [f['box'] for f in faces])
+        self.assertEqual(await Prediction.objects.filter(student__isnull=True).acount(), 2)
         await comm.disconnect()

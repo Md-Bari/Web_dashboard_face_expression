@@ -40,7 +40,7 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
     dot: 'bg-slate-400',
   };
 
-  // Never show an emotion/attention for a student nothing has been measured (or simulated) for
+  // Never show an emotion/attention for a student nothing has been measured for
   const noData = student.has_data === false;
   const badge = noData
     ? { bg: 'bg-slate-50 text-slate-500 border-slate-200', icon: Minus, label: 'No data', dot: 'bg-slate-400' }
@@ -84,16 +84,6 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
               {Math.round(student.attention * 100)}%
             </span>
           </div>
-        )}
-
-        {/* Demo Telemetry values are generated, not measured */}
-        {!noData && student.simulated && (
-          <span
-            className="absolute bottom-1 left-1 bg-violet-600/90 text-white text-[8px] font-bold tracking-wide px-1 py-0.5 rounded leading-none"
-            title="Simulated by Demo Telemetry - not measured from a webcam"
-          >
-            SIM
-          </span>
         )}
       </div>
 

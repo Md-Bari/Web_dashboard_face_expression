@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from apps.courses.access import get_instructor_session
 from .models import Prediction, SessionSnapshot, TeachingSuggestion
+from .screen import screen_participant_id, screen_participant_name
 from .serializers import SessionSnapshotSerializer, TeachingSuggestionSerializer
 from .services import AggregationService
 
@@ -76,26 +77,34 @@ def build_report(session):
         neg=Avg('negative_pct'),
     )
 
+    # One row per enrolled student and per screen-capture participant
     preds = Prediction.objects.filter(session=session)
     per_student = {
-        row['student']: row
-        for row in preds.values('student', 'student__first_name', 'student__last_name', 'student__username')
-        .annotate(avg_attention=Avg('smoothed_attention'), samples=Count('id'), avg_confidence=Avg('confidence'))
+        (row['student'], row['participant']): row
+        for row in preds.values(
+            'student', 'participant', 'student__first_name', 'student__last_name', 'student__username',
+        ).annotate(avg_attention=Avg('smoothed_attention'), samples=Count('id'), avg_confidence=Avg('confidence'))
     }
     dominant = {}
-    for row in preds.values('student', 'smoothed_emotion').annotate(n=Count('id')):
-        best = dominant.get(row['student'])
+    for row in preds.values('student', 'participant', 'smoothed_emotion').annotate(n=Count('id')):
+        key = (row['student'], row['participant'])
+        best = dominant.get(key)
         if best is None or row['n'] > best[1]:
-            dominant[row['student']] = (row['smoothed_emotion'], row['n'])
+            dominant[key] = (row['smoothed_emotion'], row['n'])
 
     students = []
-    for student_id, row in per_student.items():
-        name = f"{row['student__first_name']} {row['student__last_name']}".strip() or row['student__username']
+    for key, row in per_student.items():
+        student_id, participant = key
+        if student_id is None:
+            name = screen_participant_name(participant)
+        else:
+            name = f"{row['student__first_name']} {row['student__last_name']}".strip() or row['student__username']
         students.append({
-            'student_id': student_id,
+            'student_id': student_id if student_id is not None else screen_participant_id(participant),
+            'source': 'student' if student_id is not None else 'screen',
             'name': name,
             'avg_attention': round((row['avg_attention'] or 0) * 100),
-            'dominant_emotion': dominant.get(student_id, ('neutral', 0))[0],
+            'dominant_emotion': dominant.get(key, ('neutral', 0))[0],
             'avg_confidence': round((row['avg_confidence'] or 0) * 100),
             'samples': row['samples'],
         })

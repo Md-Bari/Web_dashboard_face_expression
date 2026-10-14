@@ -4,6 +4,7 @@ import type {
   AuthUser,
   EmotionType,
   ModelStatusData,
+  ScreenFace,
   SessionInfo,
   SessionSnapshotData,
   StudentData,
@@ -30,6 +31,16 @@ const MAX_SUGGESTIONS = 30;
 
 type Connection = 'connecting' | 'open' | 'closed';
 
+export interface ScreenState {
+  sharing: boolean;
+  faces: ScreenFace[];
+  latencyMs: number;
+  message: string | null;
+}
+
+const SCREEN_IDLE: ScreenState = { sharing: false, faces: [], latencyMs: 0, message: null };
+const SCREEN_FACE_FORGET_MS = 60_000; // drop screen faces not seen for a minute (layout changes renumber them)
+
 interface DashboardStore {
   user: AuthUser | null;
   session: SessionInfo | null;
@@ -41,23 +52,21 @@ interface DashboardStore {
   modelStatus: ModelStatusData;
   activity: ActivityItem[];
   connection: Connection;
-  demoEnabled: boolean;
   filter: 'all' | EmotionType;
   viewMode: 'grid' | 'list';
+  screen: ScreenState;
 
   setUser: (user: AuthUser | null) => void;
   setSession: (session: SessionInfo | null) => void;
   setFilter: (filter: 'all' | EmotionType) => void;
   setViewMode: (mode: 'grid' | 'list') => void;
   setConnection: (connection: Connection) => void;
-  setDemoEnabled: (enabled: boolean) => void;
   applyInit: (init: {
     session?: SessionInfo;
     roster?: StudentData[];
     snapshot?: SessionSnapshotData | null;
     suggestions?: TeachingSuggestionData[];
     model_status?: Partial<ModelStatusData>;
-    demo?: { enabled: boolean };
   }) => void;
   applyStudentUpdate: (update: Partial<StudentData> & { student_id: number }) => void;
   applyPresence: (presence: { student_id: number; student_name?: string; online: boolean }) => void;
@@ -68,6 +77,8 @@ interface DashboardStore {
   seedTrend: (points: TrendPoint[]) => void;
   logActivity: (kind: ActivityItem['kind'], text: string) => void;
   markStaleOffline: (maxAgeMs: number) => void;
+  setScreen: (patch: Partial<ScreenState>) => void;
+  applyThumbnails: (thumbs: Record<number, string>) => void;
   reset: () => void;
 }
 
@@ -94,15 +105,14 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   modelStatus: { status: 'Connecting', model_name: '—', latency_ms: 0 },
   activity: [],
   connection: 'connecting',
-  demoEnabled: false,
   filter: 'all',
   viewMode: 'grid',
+  screen: SCREEN_IDLE,
 
   setUser: (user) => set({ user }),
   setSession: (session) => set({ session }),
   setFilter: (filter) => set({ filter }),
   setViewMode: (viewMode) => set({ viewMode }),
-  setDemoEnabled: (demoEnabled) => set({ demoEnabled }),
 
   // Once the socket is open the server's init / model.status messages report the real model state
   setConnection: (connection) =>
@@ -126,7 +136,6 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
         snapshot,
         suggestions: init.suggestions || state.suggestions,
         modelStatus: { ...state.modelStatus, ...(init.model_status || {}) },
-        demoEnabled: init.demo ? init.demo.enabled : state.demoEnabled,
       };
     }),
 
@@ -136,7 +145,6 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     const { student_id, name, ...rest } = update;
     const patch: Partial<StudentData> = {
       ...rest,
-      simulated: !!update.simulated, // a real webcam frame replaces earlier demo values
       smoothed_emotion: update.emotion,
       online: true,
       has_data: true,
@@ -163,7 +171,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     }
 
     // Only log changes the instructor cares about (a student switching sentiment)
-    if (update.emotion && update.emotion !== existing.emotion && !update.simulated) {
+    if (update.emotion && update.emotion !== existing.emotion) {
       logActivity('emotion', `${existing.name} is now ${update.emotion} (${Math.round((update.attention ?? 0) * 100)}% attention)`);
     }
     set({ students: students.map((s) => (s.id === student_id ? { ...s, ...patch } : s)) });
@@ -207,11 +215,26 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     })),
 
   markStaleOffline: (maxAgeMs) => {
-    const cutoff = Date.now() - maxAgeMs;
+    const now = Date.now();
+    const cutoff = now - maxAgeMs;
+    const forget = now - SCREEN_FACE_FORGET_MS;
     const students = get().students;
-    if (!students.some((s) => s.online && (s.last_update ?? 0) < cutoff)) return;
-    set({ students: students.map((s) => (s.online && (s.last_update ?? 0) < cutoff ? { ...s, online: false } : s)) });
+    const isForgotten = (s: StudentData) => s.source === 'screen' && (s.last_update ?? 0) < forget;
+    if (!students.some((s) => (s.online && (s.last_update ?? 0) < cutoff) || isForgotten(s))) return;
+    set({
+      students: students
+        .filter((s) => !isForgotten(s))
+        .map((s) => (s.online && (s.last_update ?? 0) < cutoff ? { ...s, online: false } : s)),
+    });
   },
+
+  setScreen: (patch) => set((state) => ({ screen: { ...state.screen, ...patch } })),
+
+  // Live crops of screen faces, made in this browser only (never uploaded or stored)
+  applyThumbnails: (thumbs) =>
+    set((state) => ({
+      students: state.students.map((s) => (thumbs[s.id] ? { ...s, avatar_url: thumbs[s.id] } : s)),
+    })),
 
   reset: () =>
     set({
@@ -222,5 +245,6 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       trend: [],
       suggestions: [],
       activity: [],
+      screen: SCREEN_IDLE,
     }),
 }));

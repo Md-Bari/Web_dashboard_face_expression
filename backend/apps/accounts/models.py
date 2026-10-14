@@ -16,6 +16,12 @@ class User(AbstractUser):
     consent_given = models.BooleanField(default=False)
     consent_timestamp = models.DateTimeField(null=True, blank=True)
 
+    def save(self, *args, **kwargs):
+        # createsuperuser does not ask for a role; a superuser is always an admin, never a student
+        if self.is_superuser and self.role == 'student':
+            self.role = 'admin'
+        super().save(*args, **kwargs)
+
     def give_consent(self):
         self.consent_given = True
         self.consent_timestamp = timezone.now()
@@ -27,8 +33,12 @@ class User(AbstractUser):
         self.save(update_fields=['consent_given', 'consent_timestamp'])
 
     @property
+    def is_admin(self):
+        return self.role == 'admin' or self.is_superuser
+
+    @property
     def is_instructor(self):
-        return self.role == 'instructor' or self.is_superuser
+        return self.role == 'instructor' or self.is_admin
 
     @property
     def is_student(self):

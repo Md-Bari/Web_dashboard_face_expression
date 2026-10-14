@@ -64,7 +64,7 @@ export function InsightsView() {
       title: modelStatus.custom_model ? 'Custom ONNX model active' : 'No AI model loaded',
       body: modelStatus.custom_model
         ? `Predictions come from ${modelStatus.model_name} (${modelStatus.latency_ms} ms per frame).`
-        : 'Webcam frames produce no emotion or attention data until a model is added. Drop your trained .onnx model into backend/inference/models and it is picked up automatically within seconds. Any values shown now come from Demo Telemetry.',
+        : 'Webcam frames produce no emotion or attention data until the model files (expression .onnx, YuNet face detector and deployment_metadata.json) are in backend/inference/models. They are picked up automatically within seconds.',
     });
     return out;
   }, [snapshot, trend, students, modelStatus]);

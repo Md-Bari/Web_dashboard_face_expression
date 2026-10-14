@@ -4,28 +4,13 @@ import React from 'react';
 import { ExternalLink, FolderOpen, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useDashboardStore } from '@/lib/store';
-import { sendInstructorAction } from '@/lib/websocket';
 import { useLogout } from '@/lib/useLogout';
 import { wsBase } from '@/lib/config';
 import { Avatar } from '@/components/dashboard/Avatar';
 import { Card, PageTitle } from './ui';
 
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative w-10 h-6 rounded-full transition-colors shrink-0 disabled:opacity-50 ${checked ? 'bg-blue-600' : 'bg-slate-300'}`}
-    >
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
-    </button>
-  );
-}
-
 export function SettingsView() {
-  const { user, session, modelStatus, demoEnabled, connection } = useDashboardStore();
+  const { user, session, modelStatus, connection } = useDashboardStore();
   const { logout, loggingOut } = useLogout();
 
   return (
@@ -47,17 +32,6 @@ export function SettingsView() {
         </div>
       </Card>
 
-      <Card title="Demo telemetry" subtitle="Simulate enrolled students who are not streaming a webcam">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-xs text-slate-600 max-w-md">
-            When on, students without a live camera produce realistic simulated telemetry so the dashboard stays
-            populated. Students who join through the Student Portal always use their real webcam instead. Turn this
-            off to see only real data.
-          </p>
-          <Toggle checked={demoEnabled} disabled={connection !== 'open'} onChange={(v) => sendInstructorAction('set_simulation', { enabled: v })} />
-        </div>
-      </Card>
-
       <Card title="AI model">
         <dl className="grid grid-cols-2 gap-4 text-xs">
           <div><dt className="text-slate-500">Model</dt><dd className="font-semibold text-slate-800 mt-0.5 break-words">{modelStatus.model_name}</dd></div>
@@ -68,10 +42,11 @@ export function SettingsView() {
         <div className="mt-3 flex items-start gap-2 text-[11px] text-slate-600 bg-blue-50 border border-blue-100 rounded-xl p-3">
           <FolderOpen className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
           <span>
-            To use your trained model, place the <code className="font-mono">.onnx</code> file in{' '}
-            <code className="font-mono">backend/inference/models/</code>. It is detected automatically (no restart) and
-            this card switches to &ldquo;Custom ONNX&rdquo;. Expected input <code className="font-mono">[1,3,224,224]</code>,
-            output 3 logits (positive, neutral, negative).
+            Models are loaded from <code className="font-mono">backend/inference/models/</code> as described by{' '}
+            <code className="font-mono">deployment_metadata.json</code>: YuNet finds the face, the expression ensemble
+            classifies it into six expressions (angry, fear, happy, neutral, sad, surprise), grouped as positive
+            (happy, surprise), neutral, and negative (angry, fear, sad). Attention is measured from head pose.
+            Replaced files are picked up automatically (no restart).
           </span>
         </div>
       </Card>

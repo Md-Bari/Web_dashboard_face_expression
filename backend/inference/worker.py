@@ -17,20 +17,18 @@ except Exception:
     r = None
 
 def decode_base64_image(b64_string):
-    """Decodes base64 string to 224x224 BGR numpy array."""
+    """Decodes a base64 webcam frame to a BGR numpy array."""
     if ',' in b64_string:
         b64_string = b64_string.split(',')[1]
     img_bytes = base64.b64decode(b64_string)
     pil_img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
-    if pil_img.size != (224, 224):
-        pil_img = pil_img.resize((224, 224), Image.Resampling.BILINEAR)
     # RGB to BGR
-    img_np = np.array(pil_img)[:, :, ::-1]
-    return img_np
+    return np.ascontiguousarray(np.array(pil_img)[:, :, ::-1])
 
 def run_worker():
     print("[Inference Worker] Initializing AI models...")
     emotion_model = EmotionModel()
+    emotion_model.warmup()
     gaze_tracker = GazeTracker()
     print(f"[Inference Worker] Ready. Active Model: {emotion_model.model_name}")
 
@@ -62,23 +60,23 @@ def run_worker():
             task = json.loads(task_json.decode('utf-8'))
 
             start_t = time.time()
-            face_bgr = decode_base64_image(task['image'])
-            
-            prediction = emotion_model.predict(face_bgr)
+            frame_bgr = decode_base64_image(task['image'])
+
+            prediction = emotion_model.predict(frame_bgr)
             if prediction is None:
-                # No model loaded (or it failed): publish nothing rather than an invented result
+                # No model loaded, no face, or a failure: publish nothing rather than an invented result
                 continue
-            emotion, conf, scores = prediction
-            attention = gaze_tracker.estimate_attention(face_bgr)
+            attention = gaze_tracker.estimate_attention(prediction['landmarks'])
             latency_ms = int((time.time() - start_t) * 1000)
 
             result = {
                 "session_id": task.get("session_id"),
                 "student_id": task.get("student_id"),
-                "emotion": emotion,
-                "confidence": conf,
+                "emotion": prediction['emotion'],
+                "confidence": prediction['confidence'],
                 "attention": attention,
-                "scores": scores,
+                "scores": prediction['scores'],
+                "expression": prediction['expression'],
                 "latency_ms": latency_ms,
                 "timestamp": task.get("timestamp", int(time.time() * 1000))
             }

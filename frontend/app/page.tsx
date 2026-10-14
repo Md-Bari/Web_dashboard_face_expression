@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Activity, Loader2, Video } from 'lucide-react';
+import { Loader2, Video } from 'lucide-react';
 import { Sidebar, type TabName } from '@/components/dashboard/Sidebar';
 import { Header } from '@/components/dashboard/Header';
 import { MetricCards } from '@/components/dashboard/MetricCards';
@@ -20,17 +20,19 @@ import { SuggestionsView } from '@/components/views/SuggestionsView';
 import { ReportsView } from '@/components/views/ReportsView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { api, ApiError } from '@/lib/api';
-import { sendInstructorAction, useInstructorSocket } from '@/lib/websocket';
+import { useInstructorSocket } from '@/lib/websocket';
 import { useDashboardStore } from '@/lib/store';
+import { SessionSetup } from '@/components/dashboard/SessionSetup';
+import { ScreenShareButton } from '@/components/views/ScreenMonitor';
 
-type Boot = { state: 'loading' } | { state: 'ready' } | { state: 'error'; message: string };
+type Boot = { state: 'loading' } | { state: 'ready' } | { state: 'setup' } | { state: 'error'; message: string };
 
 export default function DashboardPage() {
   const router = useRouter();
   const [tab, setTab] = useState<TabName>('Dashboard');
   const [boot, setBoot] = useState<Boot>({ state: 'loading' });
 
-  const { session, connection, demoEnabled, setUser, setSession, seedTrend } = useDashboardStore();
+  const { session, connection, setUser, setSession, seedTrend } = useDashboardStore();
 
   // Authenticate, then load the instructor's current session
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function DashboardPage() {
         if (cancelled) return;
         setUser(me);
         if (me.role === 'student') {
-          setBoot({ state: 'error', message: 'This dashboard is for instructors. Use the Student Portal to join a class.' });
+          router.replace('/student');
           return;
         }
         const current = await api.currentSession();
@@ -66,9 +68,8 @@ export default function DashboardPage() {
       } catch (e) {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 401) router.replace('/login');
-        else if (e instanceof ApiError && e.status === 404)
-          setBoot({ state: 'error', message: 'No class session found. Run "python manage.py seed_data" in the backend.' });
-        else setBoot({ state: 'error', message: 'Cannot reach the backend on port 8000. Is the server running?' });
+        else if (e instanceof ApiError && e.status === 404) setBoot({ state: 'setup' });
+        else setBoot({ state: 'error', message: 'Cannot reach the backend. Is the server running?' });
       }
     })();
     return () => {
@@ -91,6 +92,10 @@ export default function DashboardPage() {
         <Loader2 className="w-4 h-4 animate-spin" /> Loading dashboard…
       </div>
     );
+  }
+
+  if (boot.state === 'setup') {
+    return <SessionSetup onCreated={() => window.location.reload()} />;
   }
 
   if (boot.state === 'error') {
@@ -119,7 +124,7 @@ export default function DashboardPage() {
         <Header />
 
         <main className="p-5 space-y-4 max-w-[1600px] w-full mx-auto">
-          {/* Status ribbon: pipeline state, demo telemetry, student portal */}
+          {/* Status ribbon: pipeline state, student portal */}
           <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50/70 border border-blue-100 rounded-xl px-4 py-2 text-xs">
             <div className="flex items-center gap-2 text-blue-900 font-medium">
               <span
@@ -137,20 +142,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => sendInstructorAction('set_simulation', { enabled: !demoEnabled })}
-                disabled={connection !== 'open' || ended}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border font-semibold transition-colors disabled:opacity-50 ${
-                  demoEnabled
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-                title="Simulate students who are not streaming a webcam"
-              >
-                <Activity className="w-3.5 h-3.5" />
-                <span>{demoEnabled ? 'Demo Telemetry: ON' : 'Demo Telemetry: OFF'}</span>
-              </button>
-
+              {!ended && <ScreenShareButton compact />}
               <Link
                 href="/student"
                 target="_blank"

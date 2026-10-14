@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Video,
   VideoOff,
@@ -12,8 +13,10 @@ import {
   ArrowLeft,
   GraduationCap,
   Loader2,
+  LogOut,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { useLogout } from '@/lib/useLogout';
 import { wsBase } from '@/lib/config';
 import { Avatar } from '@/components/dashboard/Avatar';
 
@@ -38,6 +41,7 @@ interface Telemetry {
 }
 
 const FRAME_INTERVAL_MS = 660; // ~1.5 fps
+const MAX_FRAME_WIDTH = 640;
 const EMOTION_STYLE = {
   positive: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
   neutral: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
@@ -54,6 +58,9 @@ export default function StudentPortal() {
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fps, setFps] = useState(0);
+  const [account, setAccount] = useState(false);
+  const router = useRouter();
+  const { logout, loggingOut } = useLogout();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -63,15 +70,48 @@ export default function StudentPortal() {
 
   const student = live?.students.find((s) => s.id === studentId) ?? null;
 
+  // A signed-in student joins as themselves; instructors/admins belong on the dashboard;
+  // without an account the open guest roster is used when the server allows it.
   useEffect(() => {
-    api
-      .publicLiveSession()
-      .then((info) => {
+    const NO_LIVE = 'No live class session right now. Ask your instructor to start the session.';
+    (async () => {
+      try {
+        const me = await api.me();
+        if (me.role !== 'student') {
+          router.replace('/');
+          return;
+        }
+        setAccount(true);
+        try {
+          const current = await api.currentSession();
+          if (current.status !== 'LIVE') throw new ApiError(404, NO_LIVE);
+          setLive({
+            id: current.id,
+            title: current.title,
+            course: current.course.title,
+            students: [{ id: me.id, name: me.name, avatar_url: me.avatar_url }],
+          });
+          setStudentId(me.id);
+        } catch {
+          setLoadError(NO_LIVE);
+        }
+        return;
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 401)) {
+          setLoadError('Cannot reach the class server.');
+          return;
+        }
+      }
+      try {
+        const info = await api.publicLiveSession();
         setLive(info);
         setStudentId(info.students[0]?.id ?? null);
-      })
-      .catch(() => setLoadError('No live class session right now. Ask your instructor to start the session.'));
-  }, []);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) router.replace('/login'); // guest access disabled
+        else setLoadError(NO_LIVE);
+      }
+    })();
+  }, [router]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -113,7 +153,7 @@ export default function StudentPortal() {
 
   useEffect(() => () => handleStop(), [handleStop]);
 
-  // Draw a centred square crop of the (4:3) video into the 224x224 canvas so faces are not stretched
+  // Send the whole frame (at most 640 px wide); the server detects and crops the face itself
   const captureAndSend = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -122,10 +162,10 @@ export default function StudentPortal() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const side = Math.min(video.videoWidth, video.videoHeight);
-    const sx = (video.videoWidth - side) / 2;
-    const sy = (video.videoHeight - side) / 2;
-    ctx.drawImage(video, sx, sy, side, side, 0, 0, 224, 224);
+    const scale = Math.min(1, MAX_FRAME_WIDTH / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     ws.send(JSON.stringify({ type: 'frame', image: canvas.toDataURL('image/jpeg', 0.85), timestamp: Date.now() }));
     framesSentRef.current += 1;
@@ -153,7 +193,9 @@ export default function StudentPortal() {
     }
 
     setWsStatus('connecting');
-    const ws = new WebSocket(`${wsBase()}/ws/student/${live.id}/?student_id=${studentId}&consent=1`);
+    // Signed-in students are identified by their auth cookie; guests name a roster entry
+    const query = account ? 'consent=1' : `student_id=${studentId}&consent=1`;
+    const ws = new WebSocket(`${wsBase()}/ws/student/${live.id}/?${query}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
@@ -166,7 +208,7 @@ export default function StudentPortal() {
         } else if (data.type === 'telemetry') {
           setTelemetry(data);
           setMessage(null);
-        } else if (data.type === 'model.missing') {
+        } else if (data.type === 'model.missing' || data.type === 'face.missing') {
           setMessage(data.message);
         } else if (data.type === 'error') {
           setMessage(data.message);
@@ -191,13 +233,27 @@ export default function StudentPortal() {
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
       <header className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
         <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Instructor Dashboard</span>
-          </Link>
+          {account ? (
+            <button
+              onClick={() => {
+                handleStop();
+                logout();
+              }}
+              disabled={loggingOut}
+              className="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Log out</span>
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              className="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Sign in</span>
+            </Link>
+          )}
           <div className="flex items-center gap-2 pl-3 border-l border-slate-800">
             <GraduationCap className="w-5 h-5 text-blue-400" />
             <span className="font-bold text-white text-sm">EMP-EDU Student Portal</span>
@@ -240,7 +296,7 @@ export default function StudentPortal() {
             <div className="space-y-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800/80 mb-6 text-xs">
               {[
                 ['Zero Raw Video Storage:', 'No video or audio is ever recorded, downloaded, or stored to disk.'],
-                ['In-Memory Processing:', 'Frames are cropped to 224x224 pixels and processed exclusively in volatile memory.'],
+                ['In-Memory Processing:', 'Frames are downscaled to at most 640px wide and processed exclusively in volatile memory.'],
                 ['Right to Revoke:', 'You can stop your camera stream and withdraw consent at any point during class.'],
               ].map(([title, body]) => (
                 <div key={title} className="flex items-start gap-2.5">
@@ -252,6 +308,16 @@ export default function StudentPortal() {
               ))}
             </div>
 
+            {account ? (
+              <div className="mb-6 flex items-center gap-3 text-xs text-slate-300">
+                {student && (
+                  <Avatar name={student.name} src={student.avatar_url} className="w-10 h-10 rounded-full text-xs" imgClassName="object-cover" />
+                )}
+                <span>
+                  Joining <b className="text-white">{live.course}</b> as <b className="text-white">{student?.name}</b>
+                </span>
+              </div>
+            ) : (
             <div className="mb-6">
               <label className="block text-xs font-semibold text-slate-300 mb-2">
                 Join {live.course} as:
@@ -273,6 +339,7 @@ export default function StudentPortal() {
                 </select>
               </div>
             </div>
+            )}
 
             <button
               onClick={() => setConsented(true)}
@@ -316,7 +383,7 @@ export default function StudentPortal() {
                   </p>
                 </div>
               )}
-              <canvas ref={canvasRef} width={224} height={224} className="hidden" />
+              <canvas ref={canvasRef} className="hidden" />
 
               {isStreaming && (
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -382,7 +449,7 @@ export default function StudentPortal() {
             <div className="mt-4 w-full bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                Streaming a 224x224 crop to <code className="text-blue-400">ws/student/{live.id}/</code>. Only the emotion label and attention
+                Streaming camera frames to <code className="text-blue-400">ws/student/{live.id}/</code>. Only the emotion label and attention
                 score are kept - zero video recorded.
               </span>
             </div>

@@ -11,16 +11,18 @@ from django.utils import timezone
 
 from apps.courses.access import get_instructor_session
 from apps.courses.models import ClassSession
-from apps.analytics import realtime
+from apps.analytics import realtime, screen
 from apps.analytics.inference_engine import get_engine
 from apps.analytics.models import SessionSnapshot, TeachingSuggestion
 from apps.analytics.services import SmoothingEngine, AggregationService, serialize_suggestion
 
 User = get_user_model()
 
-MAX_FRAME_CHARS = 400_000      # a 224x224 JPEG is ~10-30 KB; anything larger is not a face crop
+MAX_FRAME_CHARS = 400_000      # a 640x480 JPEG is ~30-80 KB; anything larger is not a webcam frame
 MIN_FRAME_INTERVAL = 0.4       # server-side cap of ~2.5 fps per student connection
 PRESENCE_WINDOW_SECONDS = 20
+MAX_SCREEN_FRAME_CHARS = 2_500_000   # a 1280px-wide JPEG of a video-call window
+MIN_SCREEN_FRAME_INTERVAL = 0.8
 
 # WebSocket close codes
 CLOSE_UNAUTHORIZED = 4401
@@ -39,9 +41,10 @@ class StudentConsumer(AsyncWebsocketConsumer):
     WebSocket consumer for student webcam telemetry.
     Endpoint: ws://backend/ws/student/<session_id>/
 
-    Identity: the authenticated student (JWT cookie) or, for the open demo portal,
+    Identity: the authenticated student (JWT cookie) or, for the open guest portal,
     `?student_id=<user id>&consent=1` for an enrolled student.
-    Receives 224x224 face frames at 1-2 fps. PRIVACY: frames are analysed in memory
+    Receives downscaled webcam frames at 1-2 fps; the server finds the face (YuNet) and
+    classifies its expression. PRIVACY: frames are analysed in memory
     only; just the emotion label and attention score are persisted.
     """
 
@@ -52,6 +55,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
         self.user = None
         self.last_frame_at = 0.0
         self.told_no_model = False
+        self.told_no_face = False
 
         await self.accept()
 
@@ -123,15 +127,23 @@ class StudentConsumer(AsyncWebsocketConsumer):
 
         result = await asyncio.to_thread(get_engine().analyze, frame_data)
         if result is None:
-            if not get_engine().custom_model_loaded and not self.told_no_model:
-                self.told_no_model = True
+            if not get_engine().custom_model_loaded:
+                if not self.told_no_model:
+                    self.told_no_model = True
+                    await self.send(text_data=json.dumps({
+                        "type": "model.missing",
+                        "message": "No AI model is loaded on the server, so no emotion or attention data is "
+                                   "produced from your camera. Your instructor sees you as online only.",
+                    }))
+            elif not self.told_no_face:
+                self.told_no_face = True
                 await self.send(text_data=json.dumps({
-                    "type": "model.missing",
-                    "message": "No AI model is loaded on the server, so no emotion or attention data is "
-                               "produced from your camera. Your instructor sees you as online only.",
+                    "type": "face.missing",
+                    "message": "No face detected. Face the camera in good lighting so your engagement can be measured.",
                 }))
             return
         self.told_no_model = False
+        self.told_no_face = False
         timestamp = payload.get('timestamp') or int(time.time() * 1000)
 
         smoothed = await self.smooth_and_save(result['emotion'], result['attention'], result['confidence'])
@@ -182,7 +194,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
         )
         scope_user = self.scope.get('user')
         # Only a signed-in *student* identifies the connection; an instructor testing the portal
-        # in the same browser falls through to the explicit student_id demo flow.
+        # in the same browser falls through to the explicit student_id guest flow.
         if scope_user is not None and scope_user.is_authenticated and scope_user.role == 'student':
             user = scope_user
             consent_ok = user.consent_given or params.get('consent') == '1'
@@ -233,13 +245,18 @@ class InstructorConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for the instructor real-time class analytics dashboard.
     Endpoint: ws://backend/ws/instructor/<session_id>/
-    Only the instructor who owns the course (or a superuser) may connect.
+    Only the instructor who owns the course (or an admin) may connect.
+
+    The instructor can also share a screen (Meet / Zoom / Teams window): `screen_frame`
+    actions are analysed for every visible face, tracked as anonymous screen participants.
     """
 
     async def connect(self):
         self.session_id = self.scope['url_route']['kwargs']['session_id']
         self.group_name = f"session_{self.session_id}"
         self.joined = False
+        self.screen_busy = False
+        self.last_screen_frame_at = 0.0
 
         await self.accept()
 
@@ -274,13 +291,87 @@ class InstructorConsumer(AsyncWebsocketConsumer):
         action = data.get('action')
         if action == 'trigger_snapshot':
             await self.trigger_aggregation()
-        elif action == 'set_simulation':
-            enabled = bool(data.get('enabled'))
-            realtime.set_demo_enabled(self.session_id, enabled)
-            await self.channel_layer.group_send(self.group_name, {
-                "type": "broadcast_demo_status",
-                "demo": {"enabled": enabled},
+        elif action == 'screen_frame':
+            await self.accept_screen_frame(data)
+
+    # ------------------------------------------------------------------ screen capture
+
+    async def accept_screen_frame(self, data):
+        frame = data.get('image', '')
+        now = time.monotonic()
+        if not isinstance(frame, str) or len(frame) > MAX_SCREEN_FRAME_CHARS:
+            return
+        # Drop frames while the previous one is still being analysed (CPU inference can lag)
+        if self.screen_busy or now - self.last_screen_frame_at < MIN_SCREEN_FRAME_INTERVAL:
+            return
+        self.screen_busy = True
+        self.last_screen_frame_at = now
+        self.screen_task = asyncio.create_task(self.process_screen_frame(frame))
+
+    async def process_screen_frame(self, frame):
+        try:
+            faces = await asyncio.to_thread(get_engine().analyze_screen, frame)
+            if faces is None:
+                await self.send(text_data=json.dumps({
+                    "type": "screen.result", "faces": [], "model_loaded": get_engine().custom_model_loaded,
+                }))
+                return
+
+            numbers = screen.get_tracker(self.session_id).assign([f['box'] for f in faces])
+            updates = await self.save_screen_faces(faces, numbers)
+            if updates is None:
+                await self.send(text_data=json.dumps({
+                    "type": "screen.result", "faces": [], "model_loaded": True,
+                    "error": "The session is not live. Start the session to analyse the screen.",
+                }))
+                return
+
+            timestamp = int(time.time() * 1000)
+            for update in updates:
+                await self.channel_layer.group_send(self.group_name, {
+                    "type": "broadcast_student_update",
+                    "student_update": {**update, "timestamp": timestamp},
+                })
+            # Boxes go back to this instructor only, for the preview overlay and tile thumbnails
+            await self.send(text_data=json.dumps({
+                "type": "screen.result",
+                "model_loaded": True,
+                "latency_ms": get_engine().last_latency_ms,
+                "faces": [
+                    {"student_id": u["student_id"], "name": u["name"], "box": f["box"],
+                     "emotion": u["emotion"], "attention": u["attention"]}
+                    for f, u in zip(faces, updates)
+                ],
+            }))
+        except Exception as exc:  # never let one bad frame kill the socket
+            print(f"[screen] frame failed: {exc!r}")
+        finally:
+            self.screen_busy = False
+
+    @database_sync_to_async
+    def save_screen_faces(self, faces, numbers):
+        session = ClassSession.objects.filter(id=self.session_id, status='LIVE').first()
+        if not session:
+            return None
+        updates = []
+        for face, number in zip(faces, numbers):
+            key = screen.participant_key(number)
+            pred = SmoothingEngine.smooth(
+                session=session, student=None, participant=key,
+                current_raw_emotion=face['emotion'],
+                current_raw_attention=face['attention'],
+                current_confidence=face['confidence'],
+            )
+            updates.append({
+                "student_id": screen.screen_participant_id(key),
+                "name": screen.screen_participant_name(key),
+                "source": "screen",
+                "emotion": pred.smoothed_emotion,
+                "raw_emotion": face['emotion'],
+                "attention": round(pred.smoothed_attention, 2),
+                "confidence": face['confidence'],
             })
+        return updates
 
     @database_sync_to_async
     def get_initial_session_data(self):
@@ -297,6 +388,7 @@ class InstructorConsumer(AsyncWebsocketConsumer):
                 "id": student.id,
                 "name": display_name(student),
                 "avatar_url": student.avatar_url,
+                "source": "student",
                 "emotion": pred.smoothed_emotion if pred else 'neutral',
                 "smoothed_emotion": pred.smoothed_emotion if pred else 'neutral',
                 "attention": round(pred.smoothed_attention, 2) if pred else 0.0,
@@ -304,7 +396,21 @@ class InstructorConsumer(AsyncWebsocketConsumer):
                 # A streaming student is online even when no model produces predictions
                 "online": student.id in connected or bool(pred and pred.timestamp >= online_after),
                 "has_data": bool(pred),
-                "simulated": bool(pred and pred.is_simulated),
+            })
+
+        for key, pred in sorted(AggregationService.latest_screen_predictions(
+                session, PRESENCE_WINDOW_SECONDS).items(), key=lambda item: screen.participant_number(item[0])):
+            roster.append({
+                "id": screen.screen_participant_id(key),
+                "name": screen.screen_participant_name(key),
+                "avatar_url": '',
+                "source": "screen",
+                "emotion": pred.smoothed_emotion,
+                "smoothed_emotion": pred.smoothed_emotion,
+                "attention": round(pred.smoothed_attention, 2),
+                "confidence": round(pred.confidence, 2),
+                "online": True,
+                "has_data": True,
             })
 
         snapshot = SessionSnapshot.objects.filter(session=session).order_by('-timestamp').first()
@@ -328,7 +434,6 @@ class InstructorConsumer(AsyncWebsocketConsumer):
             "snapshot": snapshot_data,
             "suggestions": suggestions,
             "model_status": get_engine().status(),
-            "demo": {"enabled": realtime.demo_enabled(self.session_id)},
         }
 
     @database_sync_to_async
@@ -350,9 +455,6 @@ class InstructorConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_model_status(self, event):
         await self.send(text_data=json.dumps({"type": "model.status", "data": event["status"]}))
-
-    async def broadcast_demo_status(self, event):
-        await self.send(text_data=json.dumps({"type": "demo.status", "data": event["demo"]}))
 
     async def broadcast_session_status(self, event):
         await self.send(text_data=json.dumps({"type": "session.status", "data": event["session"]}))

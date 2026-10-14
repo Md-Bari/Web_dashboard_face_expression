@@ -1,19 +1,28 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { GraduationCap, Loader2, Video } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useDashboardStore } from '@/lib/store';
+import { homeFor } from '@/lib/roles';
 
 export default function LoginPage() {
   const router = useRouter();
   const setUser = useDashboardStore((s) => s.setUser);
-  const [username, setUsername] = useState('instructor');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Already signed in: go straight to the page for this role
+  useEffect(() => {
+    api
+      .me()
+      .then((me) => router.replace(homeFor(me.role)))
+      .catch(() => undefined);
+  }, [router]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,12 +31,12 @@ export default function LoginPage() {
     try {
       const { user } = await api.login(username.trim(), password);
       setUser(user);
-      router.replace('/');
+      router.replace(homeFor(user.role));
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 401)) {
         setError('Incorrect username or password.');
       } else {
-        setError('Cannot reach the server. Is the backend running on port 8000?');
+        setError('Cannot reach the server. Is the backend running?');
       }
     } finally {
       setBusy(false);
@@ -43,7 +52,7 @@ export default function LoginPage() {
           </div>
           <div>
             <h1 className="font-bold text-slate-900 text-lg leading-tight">EMP-EDU</h1>
-            <p className="text-[11px] text-blue-600 font-medium">Instructor sign in</p>
+            <p className="text-[11px] text-blue-600 font-medium">Sign in - instructors, students and admins</p>
           </div>
         </div>
 
@@ -82,15 +91,11 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-4 text-[11px] text-slate-400 text-center">
-          Demo account after <code className="font-mono">seed_data</code>: instructor / password123
-        </p>
-
         <Link
           href="/student"
           className="mt-5 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600"
         >
-          <Video className="w-3.5 h-3.5" /> I am a student - join the class
+          <Video className="w-3.5 h-3.5" /> Join as a guest student (no account)
         </Link>
       </div>
     </main>

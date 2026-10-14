@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useDashboardStore } from './store';
 import { wsBase } from './config';
+import { handleScreenResult } from './screenCapture';
 import type {
   ModelStatusData,
   SessionInfo,
@@ -20,7 +21,6 @@ interface ServerMessage {
   snapshot?: SessionSnapshotData | null;
   suggestions?: TeachingSuggestionData[];
   model_status?: Partial<ModelStatusData>;
-  demo?: { enabled: boolean };
 }
 
 const CLOSE_UNAUTHORIZED = 4401;
@@ -28,7 +28,7 @@ const CLOSE_FORBIDDEN = 4403;
 
 let activeSocket: WebSocket | null = null;
 
-/** Send an action (e.g. set_simulation) over the live instructor socket. */
+/** Send an action (e.g. trigger_snapshot) over the live instructor socket. */
 export function sendInstructorAction(action: string, payload: Record<string, unknown> = {}) {
   if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
     activeSocket.send(JSON.stringify({ action, ...payload }));
@@ -59,7 +59,6 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
             snapshot: payload.snapshot,
             suggestions: payload.suggestions,
             model_status: payload.model_status,
-            demo: payload.demo,
           });
           break;
         case 'student.update':
@@ -77,11 +76,11 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
           store().logActivity('suggestion', `New suggestion: ${suggestion.title}`);
           break;
         }
+        case 'screen.result':
+          handleScreenResult(payload as unknown as Parameters<typeof handleScreenResult>[0]);
+          break;
         case 'model.status':
           store().setModelStatus(payload.data as Partial<ModelStatusData>);
-          break;
-        case 'demo.status':
-          store().setDemoEnabled(!!(payload.data as { enabled: boolean }).enabled);
           break;
         case 'session.status': {
           const next = payload.data as SessionInfo;
