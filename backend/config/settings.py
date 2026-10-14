@@ -168,7 +168,13 @@ if os.environ.get('USE_REDIS_CHANNEL_LAYER', 'False') == 'True' or os.environ.ge
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                "hosts": [(REDIS_HOST, int(REDIS_PORT))],
+                # channels_redis waits for messages with a blocking BZPOPMIN of up to 5 s. redis-py >= 8
+                # gives every connection a 5 s socket_timeout by default, which kills that read and
+                # drops each websocket ~5 s after it connects - so turn the read timeout off.
+                "hosts": [{
+                    "address": f"redis://{REDIS_HOST}:{REDIS_PORT}",
+                    "socket_timeout": None,
+                }],
             },
         },
     }

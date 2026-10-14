@@ -33,6 +33,8 @@ from gaze_tracker import GazeTracker  # noqa: E402
 RESCAN_SECONDS = 5
 SCREEN_MAX_FACES = 49       # a full 7x7 Meet/Zoom gallery
 SCREEN_MIN_FACE_PX = 20     # smaller faces are too blurry to classify
+PREVIEW_SIZE = (192, 144)   # instructor tile preview (4:3)
+PREVIEW_QUALITY = 60
 
 
 class InferenceEngine:
@@ -139,15 +141,32 @@ class InferenceEngine:
             self.frames_processed += 1
         return faces
 
-    def analyze(self, data_url):
-        """Decode a base64 JPEG data URL and return telemetry, or None if undecodable, no model or no face."""
-        self._maybe_reload()
-        if not self.custom_model_loaded:
+    @staticmethod
+    def _preview(frame_bgr):
+        """Small JPEG of the frame for the instructor's live tile. Kept in memory only, never stored."""
+        try:
+            img = Image.fromarray(np.ascontiguousarray(frame_bgr[:, :, ::-1]))
+            img.thumbnail(PREVIEW_SIZE)
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=PREVIEW_QUALITY)
+            return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+        except Exception:
             return None
+
+    def analyze_frame(self, data_url):
+        """(telemetry or None, live preview data URL or None) for one student webcam frame."""
+        self._maybe_reload()
         frame_bgr = self._decode(data_url)
         if frame_bgr is None:
-            return None
-        return self._run(frame_bgr)
+            return None, None
+        preview = self._preview(frame_bgr)
+        if not self.custom_model_loaded:
+            return None, preview
+        return self._run(frame_bgr), preview
+
+    def analyze(self, data_url):
+        """Decode a base64 JPEG data URL and return telemetry, or None if undecodable, no model or no face."""
+        return self.analyze_frame(data_url)[0]
 
 
 _engine = None

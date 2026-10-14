@@ -23,9 +23,10 @@ interface AvatarProps {
 
 /** Photo avatar that falls back to coloured initials when the URL is empty or fails to load (offline, blocked CDN). */
 export function Avatar({ name, src, className = '', imgClassName = '' }: AvatarProps) {
-  const [failed, setFailed] = useState(false);
+  // Remember which URL failed, so a new src (e.g. the next live frame) is tried again
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
 
-  if (!src || failed) {
+  if (!src || failedSrc === src) {
     const color = PALETTE[(name.charCodeAt(0) || 0) % PALETTE.length];
     return (
       <div
@@ -44,7 +45,7 @@ export function Avatar({ name, src, className = '', imgClassName = '' }: AvatarP
       src={src}
       alt={name}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
       className={`${className} ${imgClassName}`}
     />
   );

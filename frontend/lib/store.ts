@@ -76,6 +76,7 @@ interface DashboardStore {
   markStaleOffline: (maxAgeMs: number) => void;
   setScreen: (patch: Partial<ScreenState>) => void;
   applyThumbnails: (thumbs: Record<number, string>) => void;
+  applyPreview: (preview: { student_id: number; image: string }) => void;
   reset: () => void;
 }
 
@@ -177,7 +178,11 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   applyPresence: ({ student_id, online }) => {
     const student = get().students.find((s) => s.id === student_id);
     if (!student || student.online === online) return;
-    set({ students: get().students.map((s) => (s.id === student_id ? { ...s, online } : s)) });
+    set({
+      students: get().students.map((s) =>
+        s.id === student_id ? { ...s, online, live_thumb: online ? s.live_thumb : undefined } : s
+      ),
+    });
     get().logActivity('presence', `${student.name} ${online ? 'joined' : 'left'} the session`);
   },
 
@@ -221,11 +226,21 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     set({
       students: students
         .filter((s) => !isForgotten(s))
-        .map((s) => (s.online && (s.last_update ?? 0) < cutoff ? { ...s, online: false } : s)),
+        .map((s) =>
+          s.online && (s.last_update ?? 0) < cutoff ? { ...s, online: false, live_thumb: undefined } : s
+        ),
     });
   },
 
   setScreen: (patch) => set((state) => ({ screen: { ...state.screen, ...patch } })),
+
+  // A student's live camera preview (the server relays it; nothing is stored)
+  applyPreview: ({ student_id, image }) =>
+    set((state) => ({
+      students: state.students.map((s) =>
+        s.id === student_id ? { ...s, live_thumb: image, online: true, last_update: Date.now() } : s
+      ),
+    })),
 
   // Live crops of screen faces, made in this browser only (never uploaded or stored)
   applyThumbnails: (thumbs) =>

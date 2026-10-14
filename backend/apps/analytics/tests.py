@@ -292,3 +292,35 @@ class SixClassSuggestionTestCase(TestCase):
         self.assertIn('Consider adding more examples', titles)
         self.assertIn('Check for frustration', titles)
         self.assertNotIn('Engage students with a quick poll', titles)
+
+
+class StudentPreviewTestCase(ConsumerTestCase):
+    async def test_instructor_gets_live_preview_and_student_does_not(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        token = str(RefreshToken.for_user(self.owner).access_token)
+        teacher = WebsocketCommunicator(
+            self.app, f'/ws/instructor/{self.session.id}/', headers=[(b'cookie', f'access_token={token}'.encode())],
+        )
+        await teacher.connect()
+        self.assertEqual(json.loads((await teacher.receive_output(timeout=60))['text'])['type'], 'init')
+
+        engine = get_engine()
+        frontal = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]
+        prediction = {'emotion': 'happy', 'confidence': 0.9, 'scores': {}, 'landmarks': frontal}
+        with mock.patch.object(engine.emotion_model, 'session', object()), \
+                mock.patch.object(engine.emotion_model, 'predict', return_value=prediction):
+            student, reply = await self.send_one_frame()
+            preview = None
+            for _ in range(20):
+                message = json.loads((await teacher.receive_output(timeout=10))['text'])
+                if message['type'] == 'student.preview':
+                    preview = message['data']
+                    break
+
+        self.assertEqual(reply['type'], 'telemetry')
+        self.assertEqual(preview['student_id'], self.student.id)
+        self.assertTrue(preview['image'].startswith('data:image/jpeg;base64,'))
+        self.assertLess(len(preview['image']), 20_000)
+        self.assertTrue(await student.receive_nothing(timeout=0.5))
+        await student.disconnect()
+        await teacher.disconnect()

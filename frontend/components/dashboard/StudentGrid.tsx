@@ -135,7 +135,7 @@ export function StudentGrid() {
               >
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold text-slate-400 w-5">#{idx + 1}</span>
-                  <Avatar name={student.name} src={student.avatar_url} className="w-9 h-9 rounded-full text-xs" imgClassName="object-cover" />
+                  <Avatar name={student.name} src={student.live_thumb || student.avatar_url} className="w-9 h-9 rounded-full text-xs" imgClassName="object-cover" />
                   <div>
                     <p className="text-xs font-bold text-slate-900">{student.name}</p>
                     <p className="text-[11px] text-slate-500">
@@ -176,6 +176,16 @@ export function StudentGrid() {
             >
               <X className="w-4 h-4" />
             </button>
+
+            {selectedStudent.live_thumb && (
+              <div className="relative mb-4 w-full aspect-[4/3] rounded-xl overflow-hidden bg-slate-900">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={selectedStudent.live_thumb} alt={`${selectedStudent.name} live camera`} className="w-full h-full object-cover" />
+                <span className="absolute top-2 left-2 inline-flex items-center gap-1 bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE
+                </span>
+              </div>
+            )}
 
             <div className="flex items-center gap-3.5 mb-4">
               <Avatar

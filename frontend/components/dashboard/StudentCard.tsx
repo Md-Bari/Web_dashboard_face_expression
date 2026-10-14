@@ -36,10 +36,17 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
       <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden bg-slate-100">
         <Avatar
           name={student.name}
-          src={student.avatar_url}
+          src={student.live_thumb || student.avatar_url}
           className="w-full h-full text-lg"
-          imgClassName="object-cover group-hover:scale-105 transition-transform duration-300"
+          imgClassName="object-cover"
         />
+
+        {/* Live camera preview indicator */}
+        {student.live_thumb && (
+          <span className="absolute bottom-1 left-1 inline-flex items-center gap-1 bg-rose-600/90 text-white text-[8px] font-bold px-1 py-0.5 rounded leading-none">
+            <span className="w-1 h-1 rounded-full bg-white animate-pulse" /> LIVE
+          </span>
+        )}
 
         {/* Index Badge */}
         <span className="absolute top-1 left-1 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md leading-none shadow-xs">

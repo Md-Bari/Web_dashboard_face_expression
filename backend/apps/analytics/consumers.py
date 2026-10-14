@@ -44,7 +44,8 @@ class StudentConsumer(AsyncWebsocketConsumer):
     Identity: the authenticated student (JWT cookie) or, for the open guest portal,
     `?student_id=<user id>&consent=1` for an enrolled student.
     Receives downscaled webcam frames at 1-2 fps; the server finds the face (YuNet) and
-    classifies its expression. PRIVACY: frames are analysed in memory
+    classifies its expression, and relays a small live preview to the instructor's tile.
+    PRIVACY: frames and previews are handled in memory
     only; just the emotion label and attention score are persisted.
     """
 
@@ -126,7 +127,13 @@ class StudentConsumer(AsyncWebsocketConsumer):
             return
 
         engine = await aget_engine()
-        result = await asyncio.to_thread(engine.analyze, frame_data)
+        result, preview = await asyncio.to_thread(engine.analyze_frame, frame_data)
+        if preview:
+            # Live tile for the instructor(s) only - students never join the session group
+            await self.channel_layer.group_send(self.group_name, {
+                "type": "broadcast_student_preview",
+                "preview": {"student_id": self.user.id, "image": preview},
+            })
         if result is None:
             if not engine.custom_model_loaded:
                 if not self.told_no_model:
@@ -454,6 +461,9 @@ class InstructorConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_presence(self, event):
         await self.send(text_data=json.dumps({"type": "presence", "data": event["presence"]}))
+
+    async def broadcast_student_preview(self, event):
+        await self.send(text_data=json.dumps({"type": "student.preview", "data": event["preview"]}))
 
     async def broadcast_model_status(self, event):
         await self.send(text_data=json.dumps({"type": "model.status", "data": event["status"]}))

@@ -14,6 +14,8 @@ export interface StudentData {
   has_data?: boolean;
   /** 'screen' = anonymous face found in the instructor's shared screen (negative id) */
   source?: 'student' | 'screen';
+  /** Latest live camera preview (data URL) relayed by the server; memory only, cleared when offline */
+  live_thumb?: string;
   last_update?: number; // epoch ms
 }
 

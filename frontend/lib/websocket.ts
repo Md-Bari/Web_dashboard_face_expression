@@ -76,6 +76,9 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
           store().logActivity('suggestion', `New suggestion: ${suggestion.title}`);
           break;
         }
+        case 'student.preview':
+          store().applyPreview(payload.data as { student_id: number; image: string });
+          break;
         case 'screen.result':
           handleScreenResult(payload as unknown as Parameters<typeof handleScreenResult>[0]);
           break;
