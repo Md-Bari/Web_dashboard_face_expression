@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.courses.access import get_instructor_session
 from apps.courses.models import ClassSession
-from apps.analytics import realtime, screen
+from apps.analytics import realtime, screen, snapshots
 from apps.analytics.inference_engine import aget_engine, engine_status, get_engine
 from apps.analytics.models import SessionSnapshot, TeachingSuggestion
 from apps.analytics.services import SmoothingEngine, AggregationService, serialize_suggestion
@@ -67,6 +67,8 @@ class StudentConsumer(AsyncWebsocketConsumer):
             await self.close(code=code)
             return
 
+        # Expressions already photographed for this student in this session (one photo per class)
+        self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(self.session_id, self.user.id)
         realtime.register_student(self.session_id, self.user.id)
         self.registered = True
         realtime.ensure_running(self.session_id)
@@ -160,6 +162,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
                                                   "message": "This class session has ended."}))
             await self.close(code=CLOSE_SESSION_NOT_LIVE)
             return
+        await self.maybe_store_snapshot(result)
 
         await self.channel_layer.group_send(self.group_name, {
             "type": "broadcast_student_update",
@@ -233,6 +236,27 @@ class StudentConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def revoke_consent(self):
         self.user.revoke_consent()
+
+    async def maybe_store_snapshot(self, result):
+        """First confident sighting of an expression in this session -> save the face crop once."""
+        emotion = result['emotion']
+        if (not snapshots.enabled() or emotion in self.snapshot_emotions
+                or result['confidence'] < snapshots.min_confidence()):
+            return
+        self.snapshot_emotions.add(emotion)  # claim before awaiting so the next frame does not retry
+        try:
+            jpeg = await asyncio.to_thread(result['face_jpeg'])
+            stored = await database_sync_to_async(snapshots.save_first)(
+                self.session_id, self.user, emotion, result['confidence'], jpeg,
+            )
+        except Exception as exc:  # a snapshot must never break the live stream
+            print(f"[snapshots] {self.user.username}/{emotion}: {exc!r}")
+            stored = False
+        if not stored:
+            # Failed (retry on a later frame) or another tab stored it first (keep it claimed)
+            self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(
+                self.session_id, self.user.id,
+            )
 
     @database_sync_to_async
     def smooth_and_save(self, raw_emotion, raw_attention, confidence):

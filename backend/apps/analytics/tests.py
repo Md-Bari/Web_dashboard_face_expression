@@ -7,7 +7,7 @@ from unittest import mock
 
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from PIL import Image
 from rest_framework.test import APIClient
 
@@ -139,6 +139,7 @@ def make_frame():
     return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
 
 
+@override_settings(EXPRESSION_SNAPSHOTS_ENABLED=False)  # socket tests must not write photos to the real media folder
 class ConsumerTestCase(TransactionTestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username='owner', password='x', role='instructor')
@@ -324,3 +325,64 @@ class StudentPreviewTestCase(ConsumerTestCase):
         self.assertTrue(await student.receive_nothing(timeout=0.5))
         await student.disconnect()
         await teacher.disconnect()
+
+
+class ExpressionSnapshotTestCase(ConsumerTestCase):
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.media = tempfile.mkdtemp()
+        self.override = override_settings(MEDIA_ROOT=self.media, EXPRESSION_SNAPSHOTS_ENABLED=True,
+                                          EXPRESSION_SNAPSHOT_MIN_CONFIDENCE=0.5)
+        self.override.enable()
+
+    def tearDown(self):
+        import shutil
+        self.override.disable()
+        shutil.rmtree(self.media, ignore_errors=True)
+        super().tearDown()
+
+    async def stream(self, readings):
+        """Send one frame per (emotion, confidence) and wait for each telemetry reply."""
+        import asyncio
+        engine = get_engine()
+        frontal = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]
+        comm = self.communicator(f'/ws/student/{self.session.id}/?student_id={self.student.id}&consent=1')
+        await comm.connect()
+        await comm.receive_output(timeout=60)  # ready
+        with mock.patch.object(engine.emotion_model, 'session', object()):
+            for emotion, confidence in readings:
+                prediction = {'emotion': emotion, 'confidence': confidence, 'scores': {},
+                              'landmarks': frontal, 'box': (40, 40, 140, 140)}
+                with mock.patch.object(engine.emotion_model, 'predict', return_value=prediction):
+                    await comm.send_to(text_data=json.dumps({'type': 'frame', 'image': make_frame()}))
+                    reply = json.loads((await comm.receive_output(timeout=10))['text'])
+                    self.assertEqual(reply['type'], 'telemetry')
+                await asyncio.sleep(0.45)  # server accepts ~2.5 frames/s per student
+        return comm
+
+    async def test_each_expression_is_stored_once_in_its_class_folder(self):
+        import os
+        from apps.analytics.models import ExpressionSnapshot
+        comm = await self.stream([('happy', 0.9), ('happy', 0.95), ('sad', 0.8), ('angry', 0.3)])
+        rows = [r async for r in ExpressionSnapshot.objects.filter(student=self.student).order_by('emotion')]
+        self.assertEqual([r.emotion for r in rows], ['happy', 'sad'])  # 2nd happy skipped, weak angry ignored
+        self.assertEqual(rows[0].confidence, 0.9)  # the first sighting is kept
+        for row in rows:
+            self.assertEqual(row.image, f'expression_snapshots/session_{self.session.id}/{row.emotion}/stu.jpg')
+            with open(os.path.join(self.media, row.image), 'rb') as fh:
+                self.assertEqual(fh.read(2), b'\xff\xd8')  # JPEG
+        await comm.disconnect()
+
+    async def test_revoking_consent_deletes_photos(self):
+        import os
+        from apps.analytics.models import ExpressionSnapshot
+        comm = await self.stream([('neutral', 0.9)])
+        row = await ExpressionSnapshot.objects.aget(student=self.student)
+        path = os.path.join(self.media, row.image)
+        self.assertTrue(os.path.exists(path))
+        await comm.send_to(text_data=json.dumps({'type': 'consent.revoke'}))
+        await comm.receive_output(timeout=10)
+        self.assertFalse(await ExpressionSnapshot.objects.filter(student=self.student).aexists())
+        self.assertFalse(os.path.exists(path))
+        await comm.disconnect()

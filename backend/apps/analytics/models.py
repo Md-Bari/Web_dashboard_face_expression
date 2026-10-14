@@ -7,8 +7,8 @@ from .emotions import EMOTION_CHOICES, empty_counts
 class Prediction(models.Model):
     """
     Stores processed telemetry for a student face frame.
-    PRIVACY GUARANTEE: Never stores raw images or video streams.
-    Only stores the computed emotion label and attention numeric score.
+    PRIVACY: a prediction never holds image data - only the expression label and attention
+    score. (The one-photo-per-expression snapshots are separate: see ExpressionSnapshot.)
 
     A row belongs either to an enrolled `student` (their own webcam) or to an anonymous
     `participant` face tracked in the instructor's screen capture (e.g. a Meet/Zoom
@@ -90,3 +90,26 @@ class TeachingSuggestion(models.Model):
     def __str__(self):
         return f"{self.category}: {self.title}"
 
+
+
+class ExpressionSnapshot(models.Model):
+    """
+    The first face crop of each expression a student showed in a session (one per class).
+    The JPEG lives under MEDIA_ROOT (see settings.EXPRESSION_SNAPSHOTS_ENABLED); students are
+    told on the consent screen, and withdrawing consent deletes their snapshots.
+    """
+    session = models.ForeignKey(ClassSession, on_delete=models.CASCADE, related_name='expression_snapshots')
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='expression_snapshots')
+    emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES)
+    confidence = models.FloatField()
+    image = models.CharField(max_length=255)  # path relative to MEDIA_ROOT
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['session', 'student', 'emotion']
+        constraints = [
+            models.UniqueConstraint(fields=['session', 'student', 'emotion'], name='one_snapshot_per_expression'),
+        ]
+
+    def __str__(self):
+        return f"{self.student.username} - {self.emotion} (session {self.session_id})"

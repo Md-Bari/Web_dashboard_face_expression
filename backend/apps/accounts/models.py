@@ -31,6 +31,8 @@ class User(AbstractUser):
         self.consent_given = False
         self.consent_timestamp = None
         self.save(update_fields=['consent_given', 'consent_timestamp'])
+        # Withdrawing consent also removes the stored expression photos (rows and files)
+        self.expression_snapshots.all().delete()
 
     @property
     def is_admin(self):

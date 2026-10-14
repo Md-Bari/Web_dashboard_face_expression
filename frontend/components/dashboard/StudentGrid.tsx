@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { LayoutGrid, List, ChevronDown, Check, X, ShieldCheck } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { StudentCard } from './StudentCard';
@@ -15,6 +15,14 @@ export function StudentGrid() {
   // Resolve from the store so an open modal keeps updating live
   const selectedStudent: StudentData | null = students.find((s) => s.id === selectedId) ?? null;
   const setSelectedStudent = (s: StudentData | null) => setSelectedId(s ? s.id : null);
+
+  // Esc closes the student detail popup
+  useEffect(() => {
+    if (selectedId === null) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelectedId(null);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectedId]);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const filteredStudents = students.filter((s) => {
@@ -168,11 +176,21 @@ export function StudentGrid() {
 
       {/* Student Detail Modal */}
       {selectedStudent && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 relative">
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedStudent(null)}
+        >
+          <div
+            role="dialog"
+            aria-label={`${selectedStudent.name} details`}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl max-w-sm w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 shadow-2xl border border-slate-100 relative"
+          >
+            {/* Above the live preview, which would otherwise cover it */}
             <button
               onClick={() => setSelectedStudent(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              aria-label="Close"
+              className="absolute top-3 right-3 z-10 p-1.5 rounded-full bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-md border border-slate-200"
             >
               <X className="w-4 h-4" />
             </button>
@@ -241,8 +259,18 @@ export function StudentGrid() {
 
             <div className="mt-4 flex items-center gap-2 text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
               <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600" />
-              <span>Consent Verified. Only in-memory facial features are tracked; zero raw video recorded.</span>
+              <span>
+                Consent verified. The live preview is shown in memory only. Stored: expression label, attention score and
+                one face photo per expression - zero video recorded.
+              </span>
             </div>
+
+            <button
+              onClick={() => setSelectedStudent(null)}
+              className="mt-4 w-full py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

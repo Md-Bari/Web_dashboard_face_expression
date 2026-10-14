@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Prediction, SessionSnapshot, TeachingSuggestion
+from .models import ExpressionSnapshot, Prediction, SessionSnapshot, TeachingSuggestion
 
 
 @admin.register(Prediction)
@@ -19,3 +19,10 @@ class SessionSnapshotAdmin(admin.ModelAdmin):
 class TeachingSuggestionAdmin(admin.ModelAdmin):
     list_display = ('title', 'session', 'category', 'is_dismissed', 'created_at')
     list_filter = ('session', 'category', 'is_dismissed')
+
+
+@admin.register(ExpressionSnapshot)
+class ExpressionSnapshotAdmin(admin.ModelAdmin):
+    list_display = ('student', 'session', 'emotion', 'confidence', 'image', 'created_at')
+    list_filter = ('session', 'emotion')
+    search_fields = ('student__username', 'student__first_name', 'student__last_name')

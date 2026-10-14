@@ -22,8 +22,13 @@ An AI-powered e-learning platform providing live emotional, attentional, and eng
    - Student browser sends webcam frames (at most 640 px wide) at 1–2 fps over WebSocket `ws://backend/ws/student/{session_id}/`.
 2. **AI Inference & Gaze Tracking**:
    - The backend runs the inference engine in-process: YuNet finds the face, the YOLO11m expression ensemble (ONNX Runtime) classifies it, and attention (0.0 to 1.0) is computed from head pose using the face landmarks. Frames without a face produce no data. The standalone worker in `backend/inference` is the same code for scaling inference out via Redis.
-   - **Privacy Guarantee**: No raw video is stored on disk or in the database. The instructor's tile shows a small
-     live preview (192x144 JPEG) relayed in memory to that session's instructors only; students are told on the consent screen.
+   - **Privacy**: No video is stored. The instructor's tile shows a small live preview (192x144 JPEG) relayed in
+     memory to that session's instructors only.
+   - **Expression photos**: the first time a consenting student shows each expression in a session (prediction
+     confidence >= 50%), the classified face crop is saved once - at most six photos per student per session:
+     `backend/media/expression_snapshots/session_<id>/<expression>/<username>.jpg`. Screen-capture faces are never
+     saved. Withdrawing consent deletes the student's photos. Students are told on the consent screen.
+     Settings: `EXPRESSION_SNAPSHOTS_ENABLED` (default `True`), `EXPRESSION_SNAPSHOT_MIN_CONFIDENCE` (default `0.5`).
 3. **Smoothing & Aggregation**:
    - Telemetries are smoothed over a 10-second rolling window (`Prediction` records).
    - Class-wide metrics are aggregated every 2–5 seconds into `SessionSnapshot` rows.

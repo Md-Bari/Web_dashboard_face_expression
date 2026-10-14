@@ -208,6 +208,16 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Private files (never served publicly; instructors fetch them through the authenticated API)
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
+
+# First-seen expression snapshots: the first time a consenting student shows each expression in a
+# session, the classified face crop is saved to
+#   MEDIA_ROOT/expression_snapshots/session_<id>/<expression>/<username>.jpg
+EXPRESSION_SNAPSHOTS_ENABLED = os.environ.get('EXPRESSION_SNAPSHOTS_ENABLED', 'True') == 'True'
+# Ignore low-confidence predictions so a misread cannot take a student's only slot for that class
+EXPRESSION_SNAPSHOT_MIN_CONFIDENCE = float(os.environ.get('EXPRESSION_SNAPSHOT_MIN_CONFIDENCE', '0.5'))
+
 # WhiteNoise compresses and serves the collected static files under ASGI (Daphne).
 STORAGES = {
     'default': {

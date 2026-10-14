@@ -99,7 +99,23 @@ class InferenceEngine:
             'attention': round(float(attention), 2),
             'scores': prediction['scores'],
             'latency_ms': self.last_latency_ms,
+            # Lazily encoded: only needed the first time a student shows an expression
+            'face_jpeg': lambda: self._face_jpeg(frame_bgr, prediction.get('box')),
         }
+
+    def _face_jpeg(self, frame_bgr, box):
+        """JPEG bytes of the classified face crop (for the first-seen expression snapshots)."""
+        if box is None:
+            return None
+        try:
+            crop = self.emotion_model.face_crop(frame_bgr, box)
+            if crop is None:
+                return None
+            buf = io.BytesIO()
+            Image.fromarray(np.ascontiguousarray(crop[:, :, ::-1])).save(buf, format='JPEG', quality=90)
+            return buf.getvalue()
+        except Exception:
+            return None
 
     @staticmethod
     def _decode(data_url):

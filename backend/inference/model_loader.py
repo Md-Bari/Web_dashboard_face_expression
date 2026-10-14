@@ -106,7 +106,8 @@ class EmotionModel:
             for f in faces[:max_faces]
         ]
 
-    def _preprocess(self, frame_bgr, box):
+    def face_crop(self, frame_bgr, box):
+        """The face exactly as the classifier sees it: margin, short side -> image_size, centre crop (BGR uint8)."""
         import cv2
         x, y, fw, fh = box
         margin = float(self.metadata.get('face_margin', 0.2))
@@ -125,8 +126,12 @@ class EmotionModel:
         nh, nw = max(size, round(ch * scale)), max(size, round(cw * scale))
         crop = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
         top, left = (nh - size) // 2, (nw - size) // 2
-        crop = crop[top:top + size, left:left + size]
+        return crop[top:top + size, left:left + size]
 
+    def _preprocess(self, frame_bgr, box):
+        crop = self.face_crop(frame_bgr, box)
+        if crop is None:
+            return None
         rgb = crop[:, :, ::-1].astype(np.float32) / 255.0
         return np.transpose(rgb, (2, 0, 1))
 

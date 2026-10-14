@@ -333,7 +333,8 @@ export default function StudentPortal() {
             <div className="space-y-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800/80 mb-6 text-xs">
               {[
                 ['Live Preview:', 'Your instructor sees a small live picture of your camera on their dashboard while you stream.'],
-                ['Zero Raw Video Storage:', 'No video, picture or audio is ever recorded, downloaded, or stored to disk.'],
+                ['Expression Photos:', 'The first time each expression (happy, sad, angry, fear, surprise, neutral) is clearly detected in a class, one photo of your face is saved for your instructor - at most six per class. Withdrawing consent deletes them.'],
+                ['No Video Recording:', 'No video or audio is ever recorded, downloaded, or stored.'],
                 ['In-Memory Processing:', 'Frames are downscaled to at most 640px wide and processed exclusively in volatile memory.'],
                 ['Right to Revoke:', 'You can stop your camera stream and withdraw consent at any point during class.'],
               ].map(([title, body]) => (
@@ -498,7 +499,7 @@ export default function StudentPortal() {
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
                 Streaming camera frames to <code className="text-blue-400">ws/student/{live.id}/</code>. Your instructor sees a small
-                live preview; only the expression label and attention score are kept - zero video recorded.
+                live preview; the expression label, attention score and one photo per expression are kept - zero video recorded.
               </span>
             </div>
           </div>
