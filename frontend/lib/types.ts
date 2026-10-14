@@ -36,6 +36,20 @@ export interface CourseInfo {
   total_students: number;
 }
 
+export interface ExpressionPhoto {
+  id: number;
+  confidence: number; // percent
+  created_at: string;
+  url: string; // API path; fetch with the session cookie
+}
+
+export interface ExpressionPhotoRow {
+  student_id: number;
+  name: string;
+  username: string;
+  photos: Partial<Record<EmotionType, ExpressionPhoto>>;
+}
+
 export interface JoinInfo {
   course: { code: string; title: string };
   instructor: string;

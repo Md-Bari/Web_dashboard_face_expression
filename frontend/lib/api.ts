@@ -1,5 +1,5 @@
 import { apiBase } from './config';
-import type { AuthUser, CourseInfo, JoinInfo, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
+import type { AuthUser, CourseInfo, ExpressionPhotoRow, JoinInfo, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -90,6 +90,10 @@ export const api = {
     }),
   report: (id: number) => request<ReportData>(`/api/analytics/sessions/${id}/report/`),
   reportCsvUrl: (id: number) => `${apiBase()}/api/analytics/sessions/${id}/report.csv`,
+  expressionPhotos: (id: number) =>
+    request<{ students: ExpressionPhotoRow[] }>(`/api/analytics/sessions/${id}/expression-snapshots/`),
+  /** Absolute URL for an API path (photos are fetched with the auth cookie) */
+  url: (path: string) => `${apiBase()}${path}`,
 
   publicLiveSession: () =>
     request<{ id: number; title: string; course: string; students: { id: number; name: string; avatar_url: string }[] }>(

@@ -386,3 +386,47 @@ class ExpressionSnapshotTestCase(ConsumerTestCase):
         self.assertFalse(await ExpressionSnapshot.objects.filter(student=self.student).aexists())
         self.assertFalse(os.path.exists(path))
         await comm.disconnect()
+
+
+class ExpressionPhotoGalleryTestCase(TestCase):
+    def setUp(self):
+        import tempfile
+        from django.test import override_settings
+        from apps.analytics import snapshots
+        self.media = tempfile.mkdtemp()
+        self.override = override_settings(MEDIA_ROOT=self.media)
+        self.override.enable()
+        self.owner = User.objects.create_user(username='own', password='x', role='instructor')
+        self.other = User.objects.create_user(username='oth', password='x', role='instructor')
+        self.student = User.objects.create_user(username='kid', password='x', role='student', first_name='Kid')
+        course = Course.objects.create(title='C', code='C1', instructor=self.owner)
+        self.session = ClassSession.objects.create(course=course, title='S', session_code='C1-1', status='LIVE')
+        Enrollment.objects.create(course=course, student=self.student)
+        snapshots.save_first(self.session.id, self.student, 'happy', 0.91, b'\xff\xd8fake-jpeg')
+        self.client = APIClient()
+
+    def tearDown(self):
+        import shutil
+        self.override.disable()
+        shutil.rmtree(self.media, ignore_errors=True)
+
+    def test_owner_lists_and_downloads_photos(self):
+        self.client.force_authenticate(self.owner)
+        data = self.client.get(f'/api/analytics/sessions/{self.session.id}/expression-snapshots/').data
+        row = data['students'][0]
+        self.assertEqual(row['name'], 'Kid')
+        self.assertEqual(set(row['photos']), {'happy'})
+        self.assertEqual(row['photos']['happy']['confidence'], 91)
+        image = self.client.get(row['photos']['happy']['url'])
+        self.assertEqual(image.status_code, 200)
+        self.assertEqual(image['Content-Type'], 'image/jpeg')
+        self.assertEqual(b''.join(image.streaming_content), b'\xff\xd8fake-jpeg')
+
+    def test_other_instructor_and_students_cannot_see_photos(self):
+        url = f'/api/analytics/sessions/{self.session.id}/expression-snapshots/'
+        for user in (self.other, self.student):
+            self.client.force_authenticate(user)
+            self.assertEqual(self.client.get(url).status_code, 404)
+            self.assertEqual(self.client.get(f'{url}1/image/').status_code, 404)
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.get(url).status_code, (401, 403))

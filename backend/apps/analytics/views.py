@@ -1,16 +1,21 @@
 import csv
+import os
 
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Max, Min
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from rest_framework import views, status, permissions
 from rest_framework.response import Response
 
 from apps.courses.access import get_instructor_session
 from .emotions import EMOTIONS, percentages
-from .models import Prediction, SessionSnapshot, TeachingSuggestion
+from .models import ExpressionSnapshot, Prediction, SessionSnapshot, TeachingSuggestion
 from .screen import screen_participant_id, screen_participant_name
 from .serializers import SessionSnapshotSerializer, TeachingSuggestionSerializer
 from .services import AggregationService
+
+User = get_user_model()
 
 
 class InstructorSessionMixin:
@@ -172,4 +177,54 @@ class SessionReportCSVView(InstructorSessionMixin, views.APIView):
         writer.writerow(['Timestamp', 'Avg concentration %'])
         for point in report['timeline']:
             writer.writerow([point['timestamp'], point['concentration']])
+        return response
+
+
+class ExpressionSnapshotListView(InstructorSessionMixin, views.APIView):
+    """The session's first-seen expression photos, one row per enrolled student (photos may be missing)."""
+
+    def get(self, request, session_id):
+        session = self.get_session(request, session_id)
+        if not session:
+            return self.not_found()
+        photos = {}
+        for snap in ExpressionSnapshot.objects.filter(session=session).select_related('student'):
+            photos.setdefault(snap.student_id, {})[snap.emotion] = {
+                'id': snap.id,
+                'confidence': round(snap.confidence * 100),
+                'created_at': snap.created_at.isoformat(),
+                'url': f'/api/analytics/sessions/{session.id}/expression-snapshots/{snap.id}/image/',
+            }
+        students = []
+        for enrollment in session.course.enrollments.select_related('student').order_by('student__first_name', 'student__username'):
+            student = enrollment.student
+            students.append({
+                'student_id': student.id,
+                'name': student.get_full_name() or student.username,
+                'username': student.username,
+                'photos': photos.pop(student.id, {}),
+            })
+        # Students who were unenrolled after their photos were taken
+        for student_id, student_photos in photos.items():
+            student = User.objects.filter(id=student_id).first()
+            students.append({
+                'student_id': student_id,
+                'name': (student.get_full_name() or student.username) if student else f'Student {student_id}',
+                'username': student.username if student else '',
+                'photos': student_photos,
+            })
+        return Response({'emotions': list(EMOTIONS), 'students': students})
+
+
+class ExpressionSnapshotImageView(InstructorSessionMixin, views.APIView):
+    """One stored photo. Served through the API (never a public URL) so only the session's instructor sees it."""
+
+    def get(self, request, session_id, snapshot_id):
+        session = self.get_session(request, session_id)
+        snap = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id).first() if session else None
+        path = os.path.join(settings.MEDIA_ROOT, snap.image) if snap else None
+        if not path or not os.path.isfile(path):
+            return self.not_found()
+        response = FileResponse(open(path, 'rb'), content_type='image/jpeg')
+        response['Cache-Control'] = 'private, max-age=300'
         return response

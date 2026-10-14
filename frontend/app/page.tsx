@@ -13,6 +13,7 @@ import { ConcentrationOverview } from '@/components/dashboard/ConcentrationOverv
 import { TeachingSuggestions } from '@/components/dashboard/TeachingSuggestions';
 import { LiveMonitoringView } from '@/components/views/LiveMonitoringView';
 import { StudentsView } from '@/components/views/StudentsView';
+import { PhotosView } from '@/components/views/PhotosView';
 import { SentimentView } from '@/components/views/SentimentView';
 import { EyeTrackingView } from '@/components/views/EyeTrackingView';
 import { InsightsView } from '@/components/views/InsightsView';
@@ -172,6 +173,7 @@ export default function DashboardPage() {
           )}
           {tab === 'Live Monitoring' && <LiveMonitoringView />}
           {tab === 'Students' && <StudentsView />}
+          {tab === 'Expression Photos' && <PhotosView />}
           {tab === 'Sentiment Analysis' && <SentimentView />}
           {tab === 'Eye Tracking' && <EyeTrackingView />}
           {tab === 'AI Insights' && <InsightsView />}
