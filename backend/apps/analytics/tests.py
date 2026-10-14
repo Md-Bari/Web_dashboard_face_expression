@@ -56,15 +56,15 @@ class AnalyticsTelemetryTestCase(TestCase):
         self.assertIn('smoothed_attention', field_names)
 
     def test_smoothing_engine_sliding_window(self):
-        pred1 = SmoothingEngine.smooth(self.session, self.student, 'positive', 0.85, 0.95)
-        self.assertEqual(pred1.smoothed_emotion, 'positive')
+        pred1 = SmoothingEngine.smooth(self.session, self.student, 'happy', 0.85, 0.95)
+        self.assertEqual(pred1.smoothed_emotion, 'happy')
 
-        pred2 = SmoothingEngine.smooth(self.session, self.student, 'positive', 0.90, 0.96)
-        self.assertEqual(pred2.smoothed_emotion, 'positive')
+        pred2 = SmoothingEngine.smooth(self.session, self.student, 'happy', 0.90, 0.96)
+        self.assertEqual(pred2.smoothed_emotion, 'happy')
 
-        # Even with one neutral reading, smoothed majority remains positive
+        # Even with one neutral reading, smoothed majority remains happy
         pred3 = SmoothingEngine.smooth(self.session, self.student, 'neutral', 0.70, 0.88)
-        self.assertEqual(pred3.smoothed_emotion, 'positive')
+        self.assertEqual(pred3.smoothed_emotion, 'happy')
         self.assertAlmostEqual(pred3.smoothed_attention, (0.85 + 0.90 + 0.70) / 3, places=2)
 
     def test_aggregation_with_no_telemetry_is_empty(self):
@@ -74,12 +74,13 @@ class AnalyticsTelemetryTestCase(TestCase):
 
     def test_aggregation_service_generates_snapshot(self):
         Enrollment.objects.create(course=self.course, student=self.student)
-        SmoothingEngine.smooth(self.session, self.student, 'positive', 0.8, 0.9)
+        SmoothingEngine.smooth(self.session, self.student, 'happy', 0.8, 0.9)
         snapshot = AggregationService.aggregate_session(self.session.id)
         self.assertIsNotNone(snapshot)
         self.assertGreater(snapshot.total_students, 0)
         self.assertEqual(snapshot.session, self.session)
-        self.assertGreaterEqual(snapshot.positive_pct + snapshot.neutral_pct + snapshot.negative_pct, 99.0)
+        self.assertEqual(snapshot.emotion_counts['happy'], 1)
+        self.assertEqual(sum(snapshot.emotion_counts.values()), snapshot.total_students)
 
 
 
@@ -198,15 +199,15 @@ class ConsumerTestCase(TransactionTestCase):
         engine = get_engine()
         frontal = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
         prediction = {
-            'emotion': 'positive', 'confidence': 0.9,
-            'scores': {'positive': 0.9, 'neutral': 0.07, 'negative': 0.03},
-            'expression': 'happy', 'expressions': {}, 'landmarks': frontal,
+            'emotion': 'happy', 'confidence': 0.9,
+            'scores': {'happy': 0.9, 'neutral': 0.07, 'sad': 0.03},
+            'landmarks': frontal,
         }
         with mock.patch.object(engine.emotion_model, 'session', object()), \
                 mock.patch.object(engine.emotion_model, 'predict', return_value=prediction):
             comm, telemetry = await self.send_one_frame()
         self.assertEqual(telemetry['type'], 'telemetry')
-        self.assertEqual(telemetry['emotion'], 'positive')
+        self.assertEqual(telemetry['emotion'], 'happy')
         self.assertEqual(telemetry['attention'], 1.0)
         self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 1)
         await comm.disconnect()
@@ -229,11 +230,12 @@ class ScreenParticipantTestCase(TestCase):
 
     def test_screen_faces_count_in_snapshot_and_report(self):
         from apps.analytics.views import build_report
-        SmoothingEngine.smooth(self.session, None, 'positive', 0.9, 0.8, participant='screen-1')
-        SmoothingEngine.smooth(self.session, None, 'negative', 0.4, 0.7, participant='screen-2')
+        SmoothingEngine.smooth(self.session, None, 'happy', 0.9, 0.8, participant='screen-1')
+        SmoothingEngine.smooth(self.session, None, 'sad', 0.4, 0.7, participant='screen-2')
         snapshot = AggregationService.aggregate_session(self.session.id)
         self.assertEqual(snapshot.total_students, 2)
-        self.assertEqual(snapshot.positive_count, 1)
+        self.assertEqual(snapshot.emotion_counts['happy'], 1)
+        self.assertEqual(snapshot.emotion_counts['sad'], 1)
         names = sorted(s['name'] for s in build_report(self.session)['students'])
         self.assertEqual(names, ['Screen face 1', 'Screen face 2'])
 
@@ -251,8 +253,8 @@ class ScreenCaptureConsumerTestCase(ConsumerTestCase):
         self.assertEqual(init['type'], 'init')
 
         faces = [
-            {'box': [0.1, 0.1, 0.1, 0.15], 'emotion': 'positive', 'confidence': 0.9, 'attention': 0.95, 'expression': 'happy'},
-            {'box': [0.6, 0.1, 0.1, 0.15], 'emotion': 'negative', 'confidence': 0.8, 'attention': 0.4, 'expression': 'sad'},
+            {'box': [0.1, 0.1, 0.1, 0.15], 'emotion': 'happy', 'confidence': 0.9, 'attention': 0.95},
+            {'box': [0.6, 0.1, 0.1, 0.15], 'emotion': 'sad', 'confidence': 0.8, 'attention': 0.4},
         ]
         with mock.patch.object(get_engine(), 'analyze_screen', return_value=faces):
             await comm.send_to(text_data=json.dumps({'action': 'screen_frame', 'image': make_frame()}))
@@ -272,3 +274,21 @@ class ScreenCaptureConsumerTestCase(ConsumerTestCase):
         self.assertEqual([f['box'] for f in result['faces']], [f['box'] for f in faces])
         self.assertEqual(await Prediction.objects.filter(student__isnull=True).acount(), 2)
         await comm.disconnect()
+
+
+class SixClassSuggestionTestCase(TestCase):
+    def setUp(self):
+        instructor = User.objects.create_user(username='i6', password='x', role='instructor')
+        course = Course.objects.create(title='C', code='C6', instructor=instructor)
+        self.session = ClassSession.objects.create(course=course, title='S', session_code='C6-1', status='LIVE')
+
+    def test_sad_and_fear_trigger_examples_and_angry_triggers_frustration(self):
+        from apps.analytics.models import TeachingSuggestion
+        for i, emotion in enumerate(['sad', 'fear', 'angry', 'happy']):
+            SmoothingEngine.smooth(self.session, None, emotion, 0.9, 0.9, participant=f'screen-{i + 1}')
+        snapshot = AggregationService.aggregate_session(self.session.id)
+        self.assertEqual(AggregationService.serialize_snapshot(snapshot, with_timeline=False)['emotion_pcts']['sad'], 25)
+        titles = set(TeachingSuggestion.objects.filter(session=self.session).values_list('title', flat=True))
+        self.assertIn('Consider adding more examples', titles)
+        self.assertIn('Check for frustration', titles)
+        self.assertNotIn('Engage students with a quick poll', titles)

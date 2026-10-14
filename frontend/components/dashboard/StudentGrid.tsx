@@ -6,6 +6,8 @@ import { useDashboardStore } from '@/lib/store';
 import { StudentCard } from './StudentCard';
 import { Avatar } from './Avatar';
 import { StudentData } from '@/lib/types';
+import { EMOTIONS, EMOTION_META, emotionMeta } from '@/lib/emotions';
+import { EmotionPill } from '@/components/views/ui';
 
 export function StudentGrid() {
   const { students, filter, setFilter, viewMode, setViewMode, session } = useDashboardStore();
@@ -54,16 +56,14 @@ export function StudentGrid() {
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
             >
               <span>
-                {filter === 'all'
-                  ? 'All Students'
-                  : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                {filter === 'all' ? 'All Students' : EMOTION_META[filter].label}
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
             </button>
 
             {filterOpen && (
               <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-1">
-                {(['all', 'positive', 'neutral', 'negative'] as const).map((opt) => (
+                {(['all', ...EMOTIONS] as const).map((opt) => (
                   <button
                     key={opt}
                     onClick={() => {
@@ -75,7 +75,7 @@ export function StudentGrid() {
                     }`}
                   >
                     <span>
-                      {opt === 'all' ? 'All Students' : opt.charAt(0).toUpperCase() + opt.slice(1)}
+                      {opt === 'all' ? 'All Students' : EMOTION_META[opt].label}
                     </span>
                     {filter === opt && <Check className="w-3.5 h-3.5 text-blue-600" />}
                   </button>
@@ -148,17 +148,7 @@ export function StudentGrid() {
                 {student.has_data === false ? (
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">—</span>
                 ) : (
-                  <span
-                    className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                      student.emotion === 'positive'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : student.emotion === 'neutral'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-rose-100 text-rose-700'
-                    }`}
-                  >
-                    {student.emotion.charAt(0).toUpperCase() + student.emotion.slice(1)}
-                  </span>
+                  <EmotionPill emotion={student.smoothed_emotion || student.emotion} />
                 )}
               </div>
             ))}
@@ -167,19 +157,13 @@ export function StudentGrid() {
       </div>
 
       {/* Legend Footer */}
-      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-600">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          <span className="font-medium">Positive (Happy, Engaged)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-          <span className="font-medium">Neutral (Calm, Indifferent)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-          <span className="font-medium">Negative (Confused, Bored, Frustrated)</span>
-        </div>
+      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-slate-600">
+        {EMOTIONS.map((emotion) => (
+          <div key={emotion} className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: EMOTION_META[emotion].color }}></span>
+            <span className="font-medium">{EMOTION_META[emotion].label}</span>
+          </div>
+        ))}
       </div>
 
       {/* Student Detail Modal */}
@@ -222,12 +206,12 @@ export function StudentGrid() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Current Emotion</span>
-                <span className="font-bold capitalize text-slate-900">{selectedStudent.emotion}</span>
+                <span className="font-bold text-slate-900">{emotionMeta(selectedStudent.emotion).label}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Smoothed Emotion (10s)</span>
-                <span className="font-bold capitalize text-slate-900">
-                  {selectedStudent.smoothed_emotion || selectedStudent.emotion}
+                <span className="font-bold text-slate-900">
+                  {emotionMeta(selectedStudent.smoothed_emotion || selectedStudent.emotion).label}
                 </span>
               </div>
               <div className="flex justify-between">

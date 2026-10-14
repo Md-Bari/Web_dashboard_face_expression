@@ -95,7 +95,6 @@ class InferenceEngine:
             'confidence': round(prediction['confidence'], 2),
             'attention': round(float(attention), 2),
             'scores': prediction['scores'],
-            'expression': prediction['expression'],
             'latency_ms': self.last_latency_ms,
         }
 
@@ -133,7 +132,6 @@ class InferenceEngine:
                 'emotion': p['emotion'],
                 'confidence': round(p['confidence'], 2),
                 'attention': round(float(self.gaze.estimate_attention(p['landmarks'])), 2),
-                'expression': p['expression'],
             })
         if faces:
             self.last_latency_ms = max(1, int((time.perf_counter() - start) * 1000))

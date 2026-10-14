@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import type { ReportData } from '@/lib/types';
 import { AttentionBar, Card, EmotionPill, PageTitle, Stat } from './ui';
+import { EMOTIONS, EMOTION_META } from '@/lib/emotions';
 
 export function ReportsView() {
   const session = useDashboardStore((s) => s.session);
@@ -50,6 +51,11 @@ export function ReportsView() {
     };
   }, [sessionId, sessionStatus]);
 
+
+  const topEmotion = report
+    ? EMOTIONS.reduce((a, b) => (report.summary.avg_emotion_pcts[b] > report.summary.avg_emotion_pcts[a] ? b : a))
+    : 'neutral';
+
   return (
     <div className="space-y-4">
       <PageTitle
@@ -84,12 +90,29 @@ export function ReportsView() {
             <Stat label="Avg. concentration" value={`${report.summary.avg_concentration}%`} tone="blue" />
             <Stat label="Peak / lowest" value={`${report.summary.peak_concentration}% / ${report.summary.lowest_concentration}%`} />
             <Stat
-              label="Avg. sentiment mix"
-              value={`${report.summary.avg_positive_pct} / ${report.summary.avg_neutral_pct} / ${report.summary.avg_negative_pct}`}
-              hint="positive / neutral / negative %"
+              label="Most common expression"
+              value={EMOTION_META[topEmotion].label}
+              hint={`${report.summary.avg_emotion_pcts[topEmotion]}% on average`}
             />
             <Stat label="Suggestions generated" value={report.summary.suggestions_generated} hint={`${report.summary.snapshots} snapshots`} />
           </div>
+
+          <Card title="Average expression mix" subtitle="Share of the class showing each expression, averaged over the session">
+            <ul className="space-y-2">
+              {EMOTIONS.map((emotion) => {
+                const pct = report.summary.avg_emotion_pcts[emotion] ?? 0;
+                return (
+                  <li key={emotion} className="flex items-center gap-3 text-xs">
+                    <span className="w-16 font-semibold text-slate-700">{EMOTION_META[emotion].label}</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: EMOTION_META[emotion].color }} />
+                    </div>
+                    <span className="w-9 text-right font-mono text-slate-600">{pct}%</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
 
           <Card title="Session" subtitle="Timing">
             <dl className="grid grid-cols-2 gap-4 text-xs">

@@ -44,8 +44,8 @@ export function SettingsView() {
           <span>
             Models are loaded from <code className="font-mono">backend/inference/models/</code> as described by{' '}
             <code className="font-mono">deployment_metadata.json</code>: YuNet finds the face, the expression ensemble
-            classifies it into six expressions (angry, fear, happy, neutral, sad, surprise), grouped as positive
-            (happy, surprise), neutral, and negative (angry, fear, sad). Attention is measured from head pose.
+            classifies it into six expressions (happy, surprise, neutral, fear, sad, angry). Attention is measured
+            from head pose.
             Replaced files are picked up automatically (no restart).
           </span>
         </div>

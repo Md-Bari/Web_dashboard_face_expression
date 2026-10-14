@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Smile, Meh, Frown, Minus } from 'lucide-react';
+import { Minus } from 'lucide-react';
+import { emotionMeta } from '@/lib/emotions';
 import { StudentData } from '@/lib/types';
 import { Avatar } from './Avatar';
 
@@ -14,36 +15,13 @@ interface StudentCardProps {
 export function StudentCard({ student, index, onClick }: StudentCardProps) {
   const emotion = student.smoothed_emotion || student.emotion;
 
-  const emotionBadgeConfig = {
-    positive: {
-      bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      icon: Smile,
-      label: 'Positive',
-      dot: 'bg-emerald-500',
-    },
-    neutral: {
-      bg: 'bg-amber-50 text-amber-700 border-amber-200',
-      icon: Meh,
-      label: 'Neutral',
-      dot: 'bg-amber-500',
-    },
-    negative: {
-      bg: 'bg-rose-50 text-rose-700 border-rose-200',
-      icon: Frown,
-      label: 'Negative',
-      dot: 'bg-rose-500',
-    },
-  }[emotion] || {
-    bg: 'bg-slate-50 text-slate-700 border-slate-200',
-    icon: Meh,
-    label: 'Neutral',
-    dot: 'bg-slate-400',
-  };
+  const meta = emotionMeta(emotion);
+  const emotionBadgeConfig = { bg: meta.pill, icon: meta.icon, label: meta.label };
 
   // Never show an emotion/attention for a student nothing has been measured for
   const noData = student.has_data === false;
   const badge = noData
-    ? { bg: 'bg-slate-50 text-slate-500 border-slate-200', icon: Minus, label: 'No data', dot: 'bg-slate-400' }
+    ? { bg: 'bg-slate-50 text-slate-500 border-slate-200', icon: Minus, label: 'No data' }
     : emotionBadgeConfig;
   const Icon = badge.icon;
 

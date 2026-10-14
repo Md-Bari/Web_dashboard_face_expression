@@ -5,13 +5,6 @@ import threading
 
 import numpy as np
 
-# The dashboard works with three sentiment groups; the model predicts six expressions.
-SENTIMENT_GROUPS = {
-    'positive': ('happy', 'surprise'),
-    'neutral': ('neutral',),
-    'negative': ('angry', 'fear', 'sad'),
-}
-
 DEFAULT_METADATA = {
     'classes': ['angry', 'fear', 'happy', 'neutral', 'sad', 'surprise'],
     'image_size': 256,
@@ -30,8 +23,8 @@ class EmotionModel:
       1. YuNet (OpenCV FaceDetectorYN) finds the faces in the frame.
       2. The face box is grown by `face_margin`, cropped, its short side resized to
          `image_size` and centre cropped.
-      3. The ONNX expression ensemble returns probabilities for the six classes, which
-         are summed into the dashboard's positive / neutral / negative groups.
+      3. The ONNX expression ensemble returns probabilities for the six classes
+         (angry, fear, happy, neutral, sad, surprise); the top class is the prediction.
 
     Nothing is predicted when a model file is missing or no face is found.
     """
@@ -152,28 +145,21 @@ class EmotionModel:
         self._classify(np.zeros((1, 3, size, size), dtype=np.float32))
 
     def _describe(self, probs, face):
-        classes = self.metadata['classes']
-        expressions = {c: float(p) for c, p in zip(classes, probs)}
-        scores = {
-            group: float(sum(expressions.get(c, 0.0) for c in members))
-            for group, members in SENTIMENT_GROUPS.items()
-        }
-        emotion = max(scores, key=scores.get)
+        classes = [c.lower() for c in self.metadata['classes']]
+        top = int(np.argmax(probs))
         return {
-            'emotion': emotion,
-            'confidence': scores[emotion],
-            'scores': scores,
-            'expression': classes[int(np.argmax(probs))],
-            'expressions': expressions,
+            'emotion': classes[top],
+            'confidence': float(probs[top]),
+            'scores': {c: float(p) for c, p in zip(classes, probs)},
             'box': face[:4],
             'landmarks': face[4],
         }
 
     def predict_faces(self, frame_bgr, max_faces=1, min_size=0):
         """
-        Takes a BGR frame. Returns one dict per detected face (largest first) with the
-        dashboard sentiment ('positive' | 'neutral' | 'negative'), its confidence,
-        per-group scores, the top expression class, the face box (pixels) and landmarks.
+        Takes a BGR frame. Returns one dict per detected face (largest first) with the top
+        expression class ('angry' | 'fear' | 'happy' | 'neutral' | 'sad' | 'surprise'), its
+        probability, all class probabilities, the face box (pixels) and landmarks.
         Empty when no model is loaded, no face is visible, or inference fails -
         predictions are never invented.
         """

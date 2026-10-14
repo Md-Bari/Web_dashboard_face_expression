@@ -76,7 +76,6 @@ def run_worker():
                 "confidence": prediction['confidence'],
                 "attention": attention,
                 "scores": prediction['scores'],
-                "expression": prediction['expression'],
                 "latency_ms": latency_ms,
                 "timestamp": task.get("timestamp", int(time.time() * 1000))
             }

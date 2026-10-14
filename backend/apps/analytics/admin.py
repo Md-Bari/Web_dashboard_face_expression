@@ -11,7 +11,7 @@ class PredictionAdmin(admin.ModelAdmin):
 
 @admin.register(SessionSnapshot)
 class SessionSnapshotAdmin(admin.ModelAdmin):
-    list_display = ('session', 'timestamp', 'total_students', 'positive_pct', 'neutral_pct', 'negative_pct', 'avg_concentration')
+    list_display = ('session', 'timestamp', 'total_students', 'emotion_counts', 'avg_concentration')
     list_filter = ('session',)
 
 

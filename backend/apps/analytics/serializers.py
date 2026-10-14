@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .emotions import empty_counts, percentages
 from .models import Prediction, SessionSnapshot, TeachingSuggestion
 
 
@@ -22,9 +23,18 @@ class PredictionSerializer(serializers.ModelSerializer):
 
 
 class SessionSnapshotSerializer(serializers.ModelSerializer):
+    emotion_counts = serializers.SerializerMethodField()
+    emotion_pcts = serializers.SerializerMethodField()
+
     class Meta:
         model = SessionSnapshot
         fields = '__all__'
+
+    def get_emotion_counts(self, obj):
+        return {**empty_counts(), **obj.emotion_counts}
+
+    def get_emotion_pcts(self, obj):
+        return percentages(obj.emotion_counts, obj.total_students)
 
 
 class TeachingSuggestionSerializer(serializers.ModelSerializer):

@@ -5,9 +5,11 @@ import { Search, ArrowUpDown } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { Avatar } from '@/components/dashboard/Avatar';
 import { AttentionBar, Card, EmotionPill, PageTitle } from './ui';
+import type { EmotionType } from '@/lib/emotions';
 
 type SortKey = 'name' | 'attention' | 'emotion' | 'confidence';
-const EMOTION_ORDER = { negative: 0, neutral: 1, positive: 2 } as const;
+// Sort from the most concerning expression to the most positive
+const EMOTION_ORDER: Record<EmotionType, number> = { angry: 0, fear: 1, sad: 2, neutral: 3, surprise: 4, happy: 5 };
 
 function SortHeader({
   k,

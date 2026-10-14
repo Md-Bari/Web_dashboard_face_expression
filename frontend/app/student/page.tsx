@@ -19,6 +19,7 @@ import { api, ApiError } from '@/lib/api';
 import { useLogout } from '@/lib/useLogout';
 import { wsBase } from '@/lib/config';
 import { Avatar } from '@/components/dashboard/Avatar';
+import { emotionMeta, type EmotionType } from '@/lib/emotions';
 
 type WsStatus = 'disconnected' | 'connecting' | 'connected';
 interface RosterStudent {
@@ -33,7 +34,7 @@ interface LiveInfo {
   students: RosterStudent[];
 }
 interface Telemetry {
-  emotion: 'positive' | 'neutral' | 'negative';
+  emotion: EmotionType;
   attention: number;
   confidence: number;
   latency_ms: number;
@@ -42,11 +43,6 @@ interface Telemetry {
 
 const FRAME_INTERVAL_MS = 660; // ~1.5 fps
 const MAX_FRAME_WIDTH = 640;
-const EMOTION_STYLE = {
-  positive: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-  neutral: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
-  negative: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
-};
 
 export default function StudentPortal() {
   const [live, setLive] = useState<LiveInfo | null>(null);
@@ -397,9 +393,12 @@ export default function StudentPortal() {
             {/* What the instructor sees about you (real server response) */}
             {isStreaming && (
               <div className="mt-4 w-full grid grid-cols-3 gap-2 text-center text-xs">
-                <div className={`rounded-xl border p-2.5 ${telemetry ? EMOTION_STYLE[telemetry.emotion] : 'border-slate-800 text-slate-500'}`}>
-                  <p className="text-[10px] uppercase tracking-wide opacity-70">Sentiment</p>
-                  <p className="font-bold capitalize mt-0.5">{telemetry?.emotion ?? '…'}</p>
+                <div
+                  className="rounded-xl border border-slate-800 p-2.5"
+                  style={telemetry ? { borderColor: emotionMeta(telemetry.emotion).color } : undefined}
+                >
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Expression</p>
+                  <p className="font-bold mt-0.5 text-white">{telemetry ? emotionMeta(telemetry.emotion).label : '…'}</p>
                 </div>
                 <div className="rounded-xl border border-slate-800 p-2.5">
                   <p className="text-[10px] uppercase tracking-wide text-slate-500">Attention</p>

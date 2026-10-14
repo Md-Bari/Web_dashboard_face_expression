@@ -1,4 +1,6 @@
-export type EmotionType = 'positive' | 'neutral' | 'negative';
+import type { EmotionRecord, EmotionType } from './emotions';
+
+export type { EmotionType } from './emotions';
 
 export interface StudentData {
   id: number;
@@ -38,12 +40,8 @@ export interface TimelinePoint {
 
 export interface SessionSnapshotData {
   total_students: number;
-  positive_pct: number;
-  positive_count: number;
-  neutral_pct: number;
-  neutral_count: number;
-  negative_pct: number;
-  negative_count: number;
+  emotion_counts: EmotionRecord;
+  emotion_pcts: EmotionRecord;
   avg_concentration: number;
   low_concentration_count: number;
   timestamp?: string;
@@ -84,13 +82,11 @@ export interface AuthUser {
   display_title: string;
 }
 
-export interface TrendPoint {
+/** Class share (%) of each expression plus average concentration at one snapshot */
+export type TrendPoint = EmotionRecord & {
   timestamp: string;
-  positive: number;
-  neutral: number;
-  negative: number;
   concentration: number;
-}
+};
 
 export interface ActivityItem {
   id: string;
@@ -106,9 +102,7 @@ export interface ReportData {
     avg_concentration: number;
     peak_concentration: number;
     lowest_concentration: number;
-    avg_positive_pct: number;
-    avg_neutral_pct: number;
-    avg_negative_pct: number;
+    avg_emotion_pcts: EmotionRecord;
     suggestions_generated: number;
   };
   students: {

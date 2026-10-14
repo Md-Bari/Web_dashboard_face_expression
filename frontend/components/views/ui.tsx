@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { emotionMeta, type EmotionType } from '@/lib/emotions';
 
 export function Card({
   title,
@@ -60,16 +61,14 @@ export function Stat({ label, value, hint, tone = 'slate' }: { label: string; va
   );
 }
 
-export const EMOTION_STYLES = {
-  positive: { pill: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500', color: '#10B981' },
-  neutral: { pill: 'bg-amber-100 text-amber-700', bar: 'bg-amber-400', color: '#F59E0B' },
-  negative: { pill: 'bg-rose-100 text-rose-700', bar: 'bg-rose-500', color: '#EF4444' },
-} as const;
-
-export function EmotionPill({ emotion }: { emotion: keyof typeof EMOTION_STYLES }) {
-  const style = EMOTION_STYLES[emotion] ?? EMOTION_STYLES.neutral;
+export function EmotionPill({ emotion }: { emotion: EmotionType }) {
+  const meta = emotionMeta(emotion);
+  const Icon = meta.icon;
   return (
-    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${style.pill}`}>{emotion}</span>
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${meta.pill}`}>
+      <Icon className="w-3.5 h-3.5" />
+      {meta.label}
+    </span>
   );
 }
 

@@ -22,6 +22,7 @@ import { SettingsView } from '@/components/views/SettingsView';
 import { api, ApiError } from '@/lib/api';
 import { useInstructorSocket } from '@/lib/websocket';
 import { useDashboardStore } from '@/lib/store';
+import { EMPTY_EMOTIONS } from '@/lib/emotions';
 import { SessionSetup } from '@/components/dashboard/SessionSetup';
 import { ScreenShareButton } from '@/components/views/ScreenMonitor';
 
@@ -58,9 +59,8 @@ export default function DashboardPage() {
               .filter((h) => h.total_students > 0)
               .map((h) => ({
                 timestamp: h.timestamp as string,
-                positive: h.positive_pct,
-                neutral: h.neutral_pct,
-                negative: h.negative_pct,
+                ...EMPTY_EMOTIONS,
+                ...h.emotion_pcts,
                 concentration: h.avg_concentration,
               }))
           );

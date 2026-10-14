@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from apps.courses.models import ClassSession
+from .emotions import EMOTION_CHOICES, empty_counts
 
 
 class Prediction(models.Model):
@@ -13,11 +14,7 @@ class Prediction(models.Model):
     `participant` face tracked in the instructor's screen capture (e.g. a Meet/Zoom
     gallery), keyed like "screen-3".
     """
-    EMOTION_CHOICES = (
-        ('positive', 'Positive'),
-        ('neutral', 'Neutral'),
-        ('negative', 'Negative'),
-    )
+    EMOTION_CHOICES = EMOTION_CHOICES
 
     session = models.ForeignKey(ClassSession, on_delete=models.CASCADE, related_name='predictions')
     student = models.ForeignKey(
@@ -54,14 +51,8 @@ class SessionSnapshot(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
 
     total_students = models.PositiveIntegerField(default=0)
-    positive_count = models.PositiveIntegerField(default=0)
-    positive_pct = models.FloatField(default=0.0)
-
-    neutral_count = models.PositiveIntegerField(default=0)
-    neutral_pct = models.FloatField(default=0.0)
-
-    negative_count = models.PositiveIntegerField(default=0)
-    negative_pct = models.FloatField(default=0.0)
+    # Students per expression class, e.g. {"happy": 4, "neutral": 2, ...} (all six keys)
+    emotion_counts = models.JSONField(default=empty_counts)
 
     avg_concentration = models.FloatField(default=0.0)  # 0 to 100 percentage
     low_concentration_count = models.PositiveIntegerField(default=0)
@@ -73,7 +64,8 @@ class SessionSnapshot(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.session.title} snapshot @ {self.timestamp}: P:{self.positive_pct}% N:{self.neutral_pct}% Ng:{self.negative_pct}%"
+        counts = ' '.join(f"{e}:{n}" for e, n in self.emotion_counts.items() if n)
+        return f"{self.session.title} snapshot @ {self.timestamp}: {counts or 'no data'}"
 
 
 class TeachingSuggestion(models.Model):

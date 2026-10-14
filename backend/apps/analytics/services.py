@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from .emotions import empty_counts, percentages
 from .models import Prediction, SessionSnapshot, TeachingSuggestion
 from apps.courses.models import ClassSession
 
@@ -119,12 +120,8 @@ class AggregationService:
     def serialize_snapshot(snapshot, with_timeline=True):
         data = {
             "total_students": snapshot.total_students,
-            "positive_pct": snapshot.positive_pct,
-            "positive_count": snapshot.positive_count,
-            "neutral_pct": snapshot.neutral_pct,
-            "neutral_count": snapshot.neutral_count,
-            "negative_pct": snapshot.negative_pct,
-            "negative_count": snapshot.negative_count,
+            "emotion_counts": {**empty_counts(), **snapshot.emotion_counts},
+            "emotion_pcts": percentages(snapshot.emotion_counts, snapshot.total_students),
             "avg_concentration": snapshot.avg_concentration,
             "low_concentration_count": snapshot.low_concentration_count,
             "timestamp": snapshot.timestamp.isoformat(),
@@ -147,36 +144,29 @@ class AggregationService:
         preds = list(latest.values()) + list(screen.values())
         total_active = len(preds)
 
+        counts = empty_counts()
+        for p in preds:
+            if p.smoothed_emotion in counts:
+                counts[p.smoothed_emotion] += 1
         if preds:
-            pos_count = sum(1 for p in preds if p.smoothed_emotion == 'positive')
-            neu_count = sum(1 for p in preds if p.smoothed_emotion == 'neutral')
-            neg_count = sum(1 for p in preds if p.smoothed_emotion == 'negative')
             att_values = [p.smoothed_attention for p in preds]
             avg_conc = round(sum(att_values) / len(att_values) * 100)
             low_conc_count = sum(1 for a in att_values if a < 0.5)
         else:
-            pos_count = neu_count = neg_count = low_conc_count = 0
+            low_conc_count = 0
             avg_conc = 0
-
-        def pct(count):
-            return round(count / total_active * 100) if total_active else 0
 
         snapshot = SessionSnapshot.objects.create(
             session=session,
             total_students=total_active,
-            positive_count=pos_count,
-            positive_pct=pct(pos_count),
-            neutral_count=neu_count,
-            neutral_pct=pct(neu_count),
-            negative_count=neg_count,
-            negative_pct=pct(neg_count),
+            emotion_counts=counts,
             avg_concentration=avg_conc,
             low_concentration_count=low_conc_count,
         )
 
         if total_active:
             AggregationService.evaluate_suggestions(
-                session, pct(pos_count), pct(neu_count), pct(neg_count), avg_conc, low_conc_count
+                session, percentages(counts, total_active), avg_conc, low_conc_count
             )
 
         channel_layer = get_channel_layer()
@@ -200,21 +190,39 @@ class AggregationService:
         ).delete()
 
     @staticmethod
-    def evaluate_suggestions(session, pos_pct, neu_pct, neg_pct, avg_conc, low_conc_count):
+    def evaluate_suggestions(session, pcts, avg_conc, low_conc_count):
+        """Rule-based suggestions from the class-wide share of each expression (percent)."""
         suggestions_to_add = []
 
-        if neg_pct >= 14:
+        worried = pcts['sad'] + pcts['fear']
+        if worried >= 20:
             suggestions_to_add.append({
                 "title": "Consider adding more examples",
-                "description": f"{int(neg_pct)}% of students look confused. Adding practical examples may help.",
+                "description": f"{worried}% of students look sad or anxious. Practical examples may help them follow.",
                 "category": "CONFUSION",
                 "icon": "book"
             })
 
-        if neu_pct >= 25:
+        if pcts['angry'] >= 15:
+            suggestions_to_add.append({
+                "title": "Check for frustration",
+                "description": f"{pcts['angry']}% of students look frustrated. Slow down and check understanding.",
+                "category": "CONFUSION",
+                "icon": "message-square"
+            })
+
+        if pcts['surprise'] >= 25:
+            suggestions_to_add.append({
+                "title": "Recap the last point",
+                "description": f"{pcts['surprise']}% of students look surprised. A short recap can help it sink in.",
+                "category": "ENGAGEMENT",
+                "icon": "book"
+            })
+
+        if pcts['neutral'] >= 50:
             suggestions_to_add.append({
                 "title": "Engage students with a quick poll",
-                "description": "Neutral sentiment is high. Try an interactive poll or question.",
+                "description": f"{pcts['neutral']}% of students look neutral. Try an interactive poll or question.",
                 "category": "ENGAGEMENT",
                 "icon": "users"
             })

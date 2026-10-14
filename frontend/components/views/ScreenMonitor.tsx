@@ -4,13 +4,9 @@ import React, { useEffect, useRef } from 'react';
 import { MonitorUp, MonitorX, ShieldAlert } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { onScreenStream, startScreenCapture, stopScreenCapture } from '@/lib/screenCapture';
+import { emotionMeta } from '@/lib/emotions';
 import { Card } from './ui';
 
-const BOX_COLOR = {
-  positive: 'border-emerald-400 bg-emerald-500',
-  neutral: 'border-amber-400 bg-amber-500',
-  negative: 'border-rose-400 bg-rose-500',
-} as const;
 
 /** Toggle for screen capture; usable anywhere (dashboard ribbon, Live Monitoring). */
 export function ScreenShareButton({ compact = false }: { compact?: boolean }) {
@@ -61,17 +57,21 @@ export function ScreenMonitor() {
         <video ref={videoRef} muted playsInline className="w-full h-auto block" />
         {screen.faces.map((face) => {
           const [x, y, w, h] = face.box;
-          const color = BOX_COLOR[face.emotion];
+          const meta = emotionMeta(face.emotion);
           return (
             <div
               key={face.student_id}
-              className={`absolute border-2 rounded-md pointer-events-none ${color.split(' ')[0]}`}
-              style={{ left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` }}
+              className="absolute border-2 rounded-md pointer-events-none"
+              style={{
+                left: `${x * 100}%`,
+                top: `${y * 100}%`,
+                width: `${w * 100}%`,
+                height: `${h * 100}%`,
+                borderColor: meta.color,
+              }}
             >
-              <span
-                className={`absolute -top-5 left-0 whitespace-nowrap text-[10px] font-bold text-white px-1 rounded ${color.split(' ')[1]}`}
-              >
-                #{-face.student_id} · {face.emotion} · {Math.round(face.attention * 100)}%
+              <span className="absolute -top-5 left-0 whitespace-nowrap text-[10px] font-bold text-white px-1 rounded bg-slate-900/85">
+                #{-face.student_id} · {meta.label} · {Math.round(face.attention * 100)}%
               </span>
             </div>
           );

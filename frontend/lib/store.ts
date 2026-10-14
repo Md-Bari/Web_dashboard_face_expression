@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type {
   ActivityItem,
   AuthUser,
-  EmotionType,
   ModelStatusData,
   ScreenFace,
   SessionInfo,
@@ -11,15 +10,12 @@ import type {
   TeachingSuggestionData,
   TrendPoint,
 } from './types';
+import { EMPTY_EMOTIONS, type EmotionType } from './emotions';
 
 export const EMPTY_SNAPSHOT: SessionSnapshotData = {
   total_students: 0,
-  positive_pct: 0,
-  positive_count: 0,
-  neutral_pct: 0,
-  neutral_count: 0,
-  negative_pct: 0,
-  negative_count: 0,
+  emotion_counts: EMPTY_EMOTIONS,
+  emotion_pcts: EMPTY_EMOTIONS,
   avg_concentration: 0,
   low_concentration_count: 0,
   timeline: [],
@@ -85,9 +81,8 @@ interface DashboardStore {
 function trendPoint(snapshot: SessionSnapshotData): TrendPoint {
   return {
     timestamp: snapshot.timestamp || new Date().toISOString(),
-    positive: snapshot.positive_pct,
-    neutral: snapshot.neutral_pct,
-    negative: snapshot.negative_pct,
+    ...EMPTY_EMOTIONS,
+    ...snapshot.emotion_pcts,
     concentration: snapshot.avg_concentration,
   };
 }

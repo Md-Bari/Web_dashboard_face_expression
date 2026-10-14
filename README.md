@@ -136,9 +136,11 @@ channel layer, and aggregates snapshots inside the ASGI process.
 | `deployment_metadata.json` | Classes, image size, face margin and detector file name used by the loader |
 
 Pipeline (`backend/inference/model_loader.py`): detect the largest face, grow the box by `face_margin`,
-resize the short side to `image_size`, centre crop, classify. The six expressions are grouped for the
-dashboard as **positive** (happy, surprise), **neutral**, and **negative** (angry, fear, sad). Attention
-comes from head yaw/pitch measured on the YuNet landmarks (`gaze_tracker.py`).
+resize the short side to `image_size`, centre crop, classify. The dashboard uses the model's six classes
+directly - **Happy, Surprise, Neutral, Fear, Sad, Angry** - in tiles, the distribution donut, the trend,
+filters, reports and CSV (defined once in `backend/apps/analytics/emotions.py` and `frontend/lib/emotions.ts`).
+Teaching suggestions fire on sad + fear >= 20%, angry >= 15%, surprise >= 25%, neutral >= 50%, or low
+attention. Attention comes from head yaw/pitch measured on the YuNet landmarks (`gaze_tracker.py`).
 
 The engine rescans this directory every few seconds, so replaced model files are picked up without a
 restart. If a model file is missing, no emotion or attention data is produced at all.

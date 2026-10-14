@@ -38,10 +38,19 @@ export function InsightsView() {
       }
     }
 
-    if (snapshot.negative_pct >= 20) {
-      out.push({ tone: 'warn', icon: AlertTriangle, title: `${snapshot.negative_pct}% of the class looks confused or frustrated`, body: 'Consider re-explaining the last concept with a worked example, or pausing for questions.' });
-    } else if (snapshot.positive_pct >= 55) {
-      out.push({ tone: 'good', icon: Trophy, title: `${snapshot.positive_pct}% of the class is engaged`, body: 'The majority show positive sentiment. Good moment to introduce a harder topic.' });
+    const p = snapshot.emotion_pcts;
+    const worried = p.sad + p.fear;
+    if (p.angry >= 15) {
+      out.push({ tone: 'warn', icon: AlertTriangle, title: `${p.angry}% of the class looks angry`, body: 'Frustration is building. Slow down, check understanding and invite questions.' });
+    }
+    if (worried >= 20) {
+      out.push({ tone: 'warn', icon: AlertTriangle, title: `${worried}% of the class looks sad or fearful`, body: 'Students may be lost or anxious. Re-explain the last concept with a worked example.' });
+    }
+    if (p.surprise >= 25) {
+      out.push({ tone: 'info', icon: Lightbulb, title: `${p.surprise}% of the class looks surprised`, body: 'Something just caught them off guard. A short recap helps it sink in.' });
+    }
+    if (p.happy >= 50) {
+      out.push({ tone: 'good', icon: Trophy, title: `${p.happy}% of the class looks happy`, body: 'Engagement is high. Good moment to introduce a harder topic.' });
     }
 
     if (snapshot.low_concentration_count > 0) {
@@ -87,9 +96,9 @@ export function InsightsView() {
 
       <Card title="How these insights are produced" subtitle="Explainability">
         <ul className="space-y-2.5 text-xs text-slate-600">
-          <li className="flex gap-2.5"><ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" /> Each webcam frame is reduced to an emotion label (positive / neutral / negative) and an attention score (0-1). No image is stored.</li>
+          <li className="flex gap-2.5"><ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" /> Each face is reduced to one of six expressions (happy, surprise, neutral, fear, sad, angry) and an attention score (0-1). No image is stored.</li>
           <li className="flex gap-2.5"><ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" /> Per-student values are smoothed over a 10-second window: majority vote for sentiment, mean for attention.</li>
-          <li className="flex gap-2.5"><Lightbulb className="w-4 h-4 text-amber-500 shrink-0" /> Class metrics are aggregated every 3 seconds. Suggestions are rule-based: confusion &ge; 14%, neutral &ge; 25%, or low attention triggers an intervention.</li>
+          <li className="flex gap-2.5"><Lightbulb className="w-4 h-4 text-amber-500 shrink-0" /> Class metrics are aggregated every 3 seconds. Suggestions are rule-based: sad + fear &ge; 20%, angry &ge; 15%, surprise &ge; 25%, neutral &ge; 50%, or low attention triggers an intervention.</li>
         </ul>
       </Card>
     </div>

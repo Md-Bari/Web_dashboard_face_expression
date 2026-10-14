@@ -6,6 +6,7 @@ from rest_framework import views, status, permissions
 from rest_framework.response import Response
 
 from apps.courses.access import get_instructor_session
+from .emotions import EMOTIONS, percentages
 from .models import Prediction, SessionSnapshot, TeachingSuggestion
 from .screen import screen_participant_id, screen_participant_name
 from .serializers import SessionSnapshotSerializer, TeachingSuggestionSerializer
@@ -72,10 +73,12 @@ def build_report(session):
         avg=Avg('avg_concentration'),
         peak=Max('avg_concentration'),
         low=Min('avg_concentration'),
-        pos=Avg('positive_pct'),
-        neu=Avg('neutral_pct'),
-        neg=Avg('negative_pct'),
     )
+    # Average share of each expression across the snapshots that had students
+    class_share = [percentages(counts, total) for counts, total in snapshots.values_list('emotion_counts', 'total_students')]
+    avg_emotion_pcts = {
+        e: round(sum(s[e] for s in class_share) / len(class_share)) if class_share else 0 for e in EMOTIONS
+    }
 
     # One row per enrolled student and per screen-capture participant
     preds = Prediction.objects.filter(session=session)
@@ -126,9 +129,7 @@ def build_report(session):
             'avg_concentration': rnd(totals['avg']),
             'peak_concentration': rnd(totals['peak']),
             'lowest_concentration': rnd(totals['low']),
-            'avg_positive_pct': rnd(totals['pos']),
-            'avg_neutral_pct': rnd(totals['neu']),
-            'avg_negative_pct': rnd(totals['neg']),
+            'avg_emotion_pcts': avg_emotion_pcts,
             'suggestions_generated': TeachingSuggestion.objects.filter(session=session).count(),
         },
         'students': students,
@@ -158,7 +159,11 @@ class SessionReportCSVView(InstructorSessionMixin, views.APIView):
         writer.writerow([])
         writer.writerow(['Metric', 'Value'])
         for key, value in report['summary'].items():
-            writer.writerow([key, value])
+            if key == 'avg_emotion_pcts':
+                for emotion, pct in value.items():
+                    writer.writerow([f'avg_{emotion}_pct', pct])
+            else:
+                writer.writerow([key, value])
         writer.writerow([])
         writer.writerow(['Student', 'Avg attention %', 'Dominant emotion', 'Avg confidence %', 'Samples'])
         for s in report['students']:

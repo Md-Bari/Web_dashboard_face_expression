@@ -1,19 +1,22 @@
 'use client';
 
 import React from 'react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useDashboardStore } from '@/lib/store';
 import { formatClock } from '@/lib/format';
 import { SentimentDonut } from '@/components/dashboard/SentimentDonut';
 import { Avatar } from '@/components/dashboard/Avatar';
-import type { EmotionType } from '@/lib/types';
-import { Card, EMOTION_STYLES, PageTitle, Stat } from './ui';
+import { EMOTIONS, EMOTION_META, type EmotionType } from '@/lib/emotions';
+import { Card, PageTitle, Stat } from './ui';
 
-const COLUMNS: { emotion: EmotionType; title: string; hint: string }[] = [
-  { emotion: 'positive', title: 'Positive', hint: 'Happy, engaged' },
-  { emotion: 'neutral', title: 'Neutral', hint: 'Calm, indifferent' },
-  { emotion: 'negative', title: 'Negative', hint: 'Confused, bored, frustrated' },
-];
+const HINTS: Record<EmotionType, string> = {
+  happy: 'Enjoying, engaged',
+  surprise: 'Caught off guard by something new',
+  neutral: 'Calm, listening',
+  fear: 'Anxious, unsure',
+  sad: 'Discouraged, low energy',
+  angry: 'Frustrated',
+};
 
 const plural = (n: number) => `${n} student${n === 1 ? '' : 's'}`;
 
@@ -24,20 +27,30 @@ export function SentimentView() {
   return (
     <div className="space-y-4">
       <PageTitle
-        title="Sentiment Analysis"
+        title="Expression Analysis"
         subtitle="Emotion classification smoothed over a 10-second rolling window"
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <Stat label="Positive" value={`${snapshot.positive_pct}%`} hint={plural(snapshot.positive_count)} tone="green" />
-        <Stat label="Neutral" value={`${snapshot.neutral_pct}%`} hint={plural(snapshot.neutral_count)} tone="amber" />
-        <Stat label="Negative" value={`${snapshot.negative_pct}%`} hint={plural(snapshot.negative_count)} tone="rose" />
-        <Stat label="Reporting students" value={snapshot.total_students} hint={`of ${students.length} enrolled`} tone="blue" />
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+        {EMOTIONS.map((emotion) => {
+          const meta = EMOTION_META[emotion];
+          const Icon = meta.icon;
+          return (
+            <div key={emotion} className="bg-white rounded-2xl border border-slate-100 p-3.5 shadow-xs">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                <Icon className="w-3.5 h-3.5" style={{ color: meta.color }} /> {meta.label}
+              </p>
+              <p className="text-2xl font-bold leading-tight mt-0.5 text-slate-900">{snapshot.emotion_pcts[emotion] ?? 0}%</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">{plural(snapshot.emotion_counts[emotion] ?? 0)}</p>
+            </div>
+          );
+        })}
+        <Stat label="Reporting" value={snapshot.total_students} hint={`faces · ${students.length} listed`} tone="blue" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <Card title="Sentiment Trend" subtitle="Share of students per sentiment, every aggregation cycle" className="xl:col-span-8">
-          <div className="h-[260px]">
+        <Card title="Expression Trend" subtitle="Share of students per expression, every aggregation cycle" className="xl:col-span-8">
+          <div className="h-[280px]">
             {data.length < 2 ? (
               <p className="h-full flex items-center justify-center text-xs text-slate-400">Collecting data…</p>
             ) : (
@@ -47,9 +60,22 @@ export function SentimentView() {
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={50} />
                   <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} allowDataOverflow tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11, border: '1px solid #e2e8f0' }} formatter={(v) => `${v}%`} />
-                  <Area type="monotone" dataKey="positive" stackId="1" stroke={EMOTION_STYLES.positive.color} fill={EMOTION_STYLES.positive.color} fillOpacity={0.7} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="neutral" stackId="1" stroke={EMOTION_STYLES.neutral.color} fill={EMOTION_STYLES.neutral.color} fillOpacity={0.7} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="negative" stackId="1" stroke={EMOTION_STYLES.negative.color} fill={EMOTION_STYLES.negative.color} fillOpacity={0.7} isAnimationActive={false} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: '#475569' }} />
+                  {/* Stack order matches the validated palette order; white strokes keep a gap between bands */}
+                  {EMOTIONS.map((emotion) => (
+                    <Area
+                      key={emotion}
+                      type="monotone"
+                      dataKey={emotion}
+                      name={EMOTION_META[emotion].label}
+                      stackId="1"
+                      stroke="#ffffff"
+                      strokeWidth={1.5}
+                      fill={EMOTION_META[emotion].color}
+                      fillOpacity={0.85}
+                      isAnimationActive={false}
+                    />
+                  ))}
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -60,11 +86,11 @@ export function SentimentView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {COLUMNS.map((col) => {
-          const members = students.filter((s) => s.has_data !== false && s.emotion === col.emotion);
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {EMOTIONS.map((emotion) => {
+          const members = students.filter((s) => s.has_data !== false && s.emotion === emotion);
           return (
-            <Card key={col.emotion} title={`${col.title} (${members.length})`} subtitle={col.hint}>
+            <Card key={emotion} title={`${EMOTION_META[emotion].label} (${members.length})`} subtitle={HINTS[emotion]}>
               <ul className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
                 {members.map((s) => (
                   <li key={s.id} className="flex items-center justify-between gap-2 text-xs">
