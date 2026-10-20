@@ -138,3 +138,192 @@ class JoinLinkTestCase(TestCase):
         self.assertTrue(self.course.enrollments.filter(student=student).exists())
         self.client.force_authenticate(user=self.instructor)
         self.assertEqual(self.client.post(f'/api/join/{self.course.join_code}/enroll/').status_code, 403)
+
+
+# ---------------------------------------------------------------- classes, sections, meetings
+
+from datetime import timedelta  # noqa: E402
+from unittest import mock  # noqa: E402
+
+import jwt  # noqa: E402
+from django.test import override_settings  # noqa: E402
+from django.utils import timezone  # noqa: E402
+
+from apps.courses.models import Enrollment, Section  # noqa: E402
+
+LIVEKIT = dict(LIVEKIT_URL='wss://lk.example.test', LIVEKIT_API_KEY='APItest', LIVEKIT_API_SECRET='s' * 40)
+
+
+@override_settings(**LIVEKIT)
+@mock.patch('apps.courses.livekit.close_room')
+class ClassSectionTestCase(TestCase):
+    def setUp(self):
+        self.api = APIClient()
+        self.teacher = User.objects.create_user(username='teach', password='x', role='instructor')
+        self.other = User.objects.create_user(username='other_teach', password='x', role='instructor')
+        self.course = Course.objects.create(title='Physics', code='PHY1', instructor=self.teacher)
+        self.a = Section.objects.create(course=self.course, name='A')
+        self.b = Section.objects.create(course=self.course, name='B')
+        self.ann = User.objects.create_user(username='ann', password='x', role='student', first_name='Ann')
+        self.bob = User.objects.create_user(username='bob', password='x', role='student', email='bob@uni.test')
+        Enrollment.objects.create(course=self.course, student=self.ann, section=self.a)
+        self.api.force_authenticate(self.teacher)
+
+    def session(self, sections=(), status='LIVE'):
+        session = ClassSession.objects.create(course=self.course, title='Lecture', session_code=f'S{ClassSession.objects.count()}',
+                                              status=status, started_at=timezone.now())
+        session.sections.set(sections)
+        return session
+
+    def test_new_class_starts_with_section_a_and_lists_sections(self, _close):
+        res = self.api.post('/api/courses/', {'title': 'Chemistry', 'code': 'CHE1'}, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual([s['name'] for s in res.data['sections']], ['A'])
+        course = self.api.get(f'/api/courses/{self.course.id}/').data
+        self.assertEqual([(s['name'], s['total_students']) for s in course['sections']], [('A', 1), ('B', 0)])
+
+    def test_sections_are_unique_per_class_and_private_to_the_instructor(self, _close):
+        res = self.api.post('/api/sections/', {'course_id': self.course.id, 'name': 'a'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self.api.post('/api/sections/', {'course_id': self.course.id, 'name': 'C'}, format='json').status_code, 201)
+        self.api.force_authenticate(self.other)
+        self.assertEqual(self.api.get(f'/api/sections/?course={self.course.id}').data, [])
+        res = self.api.post('/api/sections/', {'course_id': self.course.id, 'name': 'D'}, format='json')
+        self.assertEqual(res.status_code, 400)
+
+    def test_add_move_filter_and_remove_students(self, _close):
+        res = self.api.post('/api/enrollments/', {'course_id': self.course.id, 'identifier': 'bob@uni.test',
+                                                  'section_id': self.b.id}, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['section']['name'], 'B')
+        again = self.api.post('/api/enrollments/', {'course_id': self.course.id, 'identifier': 'bob'}, format='json')
+        self.assertEqual(again.status_code, 400)
+        missing = self.api.post('/api/enrollments/', {'course_id': self.course.id, 'identifier': 'nobody',
+                                                      'section_id': self.a.id}, format='json')
+        self.assertEqual(missing.status_code, 404)
+        no_section = self.api.post('/api/enrollments/', {'course_id': self.course.id, 'identifier': 'bob'}, format='json')
+        self.assertEqual(no_section.status_code, 400)
+
+        in_b = self.api.get(f'/api/enrollments/?course={self.course.id}&section={self.b.id}').data
+        self.assertEqual([e['student']['username'] for e in in_b], ['bob'])
+        enrollment_id = in_b[0]['id']
+        # Every student stays in a section: moving is fine, taking the section away is not
+        self.assertEqual(self.api.patch(f'/api/enrollments/{enrollment_id}/', {'section_id': None}, format='json').status_code, 400)
+        self.assertEqual(self.api.patch(f'/api/enrollments/{enrollment_id}/', {'section_id': self.a.id}, format='json').status_code, 200)
+        self.assertEqual(len(self.api.get(f'/api/enrollments/?course={self.course.id}&section={self.a.id}').data), 2)
+        self.assertEqual(self.api.delete(f'/api/enrollments/{enrollment_id}/').status_code, 204)
+        self.assertFalse(Enrollment.objects.filter(student=self.bob).exists())
+
+    def test_csv_import_adds_moves_and_reports_unknown_accounts(self, _close):
+        csv_text = 'username,section\nbob,C\nann,B\nghost,A\nteach,A\n'
+        refused = self.api.post('/api/enrollments/import/', {'course_id': self.course.id, 'csv': csv_text}, format='json')
+        self.assertEqual(refused.status_code, 400)  # rows without a section need a default one
+        res = self.api.post('/api/enrollments/import/', {'course_id': self.course.id, 'csv': csv_text,
+                                                         'section_id': self.a.id}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['added'], ['bob'])
+        self.assertEqual(res.data['moved'], ['Ann'])
+        self.assertEqual(res.data['not_found'], ['ghost'])
+        self.assertEqual(res.data['not_student'], ['teach'])
+        self.assertEqual(Enrollment.objects.get(student=self.bob).section.name, 'C')  # section created
+
+    def test_section_invite_link_places_new_students_in_that_section(self, _close):
+        self.api.force_authenticate(None)
+        info = self.api.get(f'/api/join/{self.b.join_code}/').data
+        self.assertEqual(info['section'], 'B')
+        res = self.api.post(f'/api/join/{self.b.join_code}/register/', {
+            'first_name': 'Cat', 'username': 'cat_b', 'password': 'Sunflower-River-77',
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(Enrollment.objects.get(student__username='cat_b').section, self.b)
+
+    def test_students_only_see_sessions_for_their_section(self, _close):
+        for_a, for_b, whole = self.session([self.a]), self.session([self.b]), self.session()
+        self.api.force_authenticate(self.ann)
+        ids = {s['id'] for s in self.api.get('/api/sessions/').data}
+        self.assertEqual(ids, {for_a.id, whole.id})
+        self.assertNotIn(for_b.id, ids)
+
+    def test_meeting_pass_for_host_and_allowed_student_only(self, _close):
+        session = self.session([self.a])
+        host = self.api.post(f'/api/sessions/{session.id}/meeting/').data
+        claims = jwt.decode(host['token'], LIVEKIT['LIVEKIT_API_SECRET'], algorithms=['HS256'])
+        self.assertTrue(host['host'])
+        self.assertEqual((claims['sub'], claims['video']['room'], claims['video'].get('roomAdmin')),
+                         (f'user-{self.teacher.id}', session.room_name, True))
+
+        self.api.force_authenticate(self.ann)
+        refused = self.api.post(f'/api/sessions/{session.id}/meeting/')
+        self.assertEqual((refused.status_code, refused.data['code']), (403, 'consent_required'))
+        student = self.api.post(f'/api/sessions/{session.id}/meeting/', {'consent': True}, format='json')
+        self.assertEqual(student.status_code, 200)
+        grant = jwt.decode(student.data['token'], LIVEKIT['LIVEKIT_API_SECRET'], algorithms=['HS256'])['video']
+        self.assertEqual(grant['canPublishSources'], ['camera', 'microphone'])
+        self.assertNotIn('roomAdmin', grant)
+
+        Enrollment.objects.create(course=self.course, student=self.bob, section=self.b)
+        self.bob.give_consent()
+        self.api.force_authenticate(self.bob)
+        self.assertEqual(self.api.post(f'/api/sessions/{session.id}/meeting/').status_code, 404)  # not his section
+
+    def test_meeting_waits_until_the_session_is_live(self, _close):
+        session = self.session([self.a], status='SCHEDULED')
+        res = self.api.post(f'/api/sessions/{session.id}/meeting/')
+        self.assertEqual((res.status_code, res.data['code']), (409, 'not_live'))
+
+    @override_settings(LIVEKIT_URL='')
+    def test_meetings_report_when_not_configured(self, _close):
+        res = self.api.post(f'/api/sessions/{self.session().id}/meeting/')
+        self.assertEqual(res.status_code, 503)
+
+    def test_meeting_link_enrolls_only_when_the_section_is_clear(self, _close):
+        one_section, two_sections = self.session([self.b]), self.session([self.a, self.b])
+        self.api.force_authenticate(self.bob)
+        info = self.api.get(f'/api/meet/{one_section.join_code}/').data
+        self.assertEqual((info['viewer']['enrolled'], info['viewer']['allowed']), (False, False))
+        self.assertEqual(self.api.post(f'/api/meet/{one_section.join_code}/enroll/').status_code, 200)
+        self.assertEqual(Enrollment.objects.get(student=self.bob).section, self.b)
+
+        Enrollment.objects.filter(student=self.bob).delete()
+        refused = self.api.post(f'/api/meet/{two_sections.join_code}/enroll/')
+        self.assertEqual(refused.status_code, 403)
+        self.assertFalse(Enrollment.objects.filter(student=self.bob).exists())
+
+        # A whole-class session of a class with several sections cannot tell the section either
+        whole_class = self.session()
+        self.assertEqual(self.api.post(f'/api/meet/{whole_class.join_code}/enroll/').status_code, 403)
+        self.assertFalse(self.api.get(f'/api/meet/{whole_class.join_code}/').data['can_register'])
+
+        self.api.force_authenticate(self.ann)  # in section A: not allowed into a section-B session
+        self.assertEqual(self.api.post(f'/api/meet/{one_section.join_code}/enroll/').status_code, 403)
+
+    def test_meeting_link_info_is_public(self, _close):
+        session = self.session([self.a])
+        self.api.force_authenticate(None)
+        info = self.api.get(f'/api/meet/{session.join_code}/').data
+        self.assertEqual(info['viewer'], {'signed_in': False})
+        self.assertEqual(info['session']['sections'], ['A'])
+        self.assertEqual(self.api.get('/api/meet/NOPE1234/').status_code, 404)
+
+    def test_ending_a_session_closes_its_meeting_room(self, close_room):
+        session = self.session()
+        self.assertEqual(self.api.post(f'/api/sessions/{session.id}/end/').status_code, 200)
+        close_room.assert_called_once_with(session.room_name)
+
+    def test_forgotten_live_sessions_end_automatically(self, close_room):
+        from apps.courses.services import end_stale_sessions
+        old, fresh = self.session(), self.session()
+        ClassSession.objects.filter(id=old.id).update(started_at=timezone.now() - timedelta(hours=9))
+        self.assertEqual(end_stale_sessions(), 1)
+        old.refresh_from_db()
+        fresh.refresh_from_db()
+        self.assertEqual((old.status, fresh.status), ('ENDED', 'LIVE'))
+
+    def test_class_wide_link_needs_a_single_section(self, _close):
+        self.api.force_authenticate(None)
+        res = self.api.get(f'/api/join/{self.course.join_code}/')  # two sections: which one?
+        self.assertEqual(res.status_code, 404)
+        self.assertIn("section's invite link", res.data['detail'])
+        self.b.delete()
+        info = self.api.get(f'/api/join/{self.course.join_code}/').data
+        self.assertEqual(info['section'], 'A')  # the only section

@@ -3,19 +3,27 @@ import os
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, Max, Min
+from django.db.models import Avg, Max, Min
 from django.http import FileResponse, HttpResponse
 from rest_framework import views, status, permissions
 from rest_framework.response import Response
 
 from apps.courses.access import get_instructor_session
 from .emotions import EMOTIONS, percentages
-from .models import ExpressionSnapshot, Prediction, SessionSnapshot, TeachingSuggestion
+from .models import ExpressionSnapshot, ParticipantStat, SessionSnapshot, TeachingSuggestion
 from .screen import screen_participant_id, screen_participant_name
 from .serializers import SessionSnapshotSerializer, TeachingSuggestionSerializer
 from .services import AggregationService
 
 User = get_user_model()
+
+
+def section_param(request):
+    """The ?section=<id> filter of a request, or None."""
+    try:
+        return int(request.query_params.get('section'))
+    except (TypeError, ValueError):
+        return None
 
 
 class InstructorSessionMixin:
@@ -71,8 +79,8 @@ class AggregateSessionView(InstructorSessionMixin, views.APIView):
         return Response(SessionSnapshotSerializer(snapshot).data)
 
 
-def build_report(session):
-    """Session summary + per-student stats, computed from stored labels/scores only."""
+def build_report(session, section_id=None):
+    """Session summary + per-student stats (optionally one section only), from stored labels/scores only."""
     snapshots = SessionSnapshot.objects.filter(session=session, total_students__gt=0)
     totals = snapshots.aggregate(
         avg=Avg('avg_concentration'),
@@ -85,36 +93,30 @@ def build_report(session):
         e: round(sum(s[e] for s in class_share) / len(class_share)) if class_share else 0 for e in EMOTIONS
     }
 
-    # One row per enrolled student and per screen-capture participant
-    preds = Prediction.objects.filter(session=session)
-    per_student = {
-        (row['student'], row['participant']): row
-        for row in preds.values(
-            'student', 'participant', 'student__first_name', 'student__last_name', 'student__username',
-        ).annotate(avg_attention=Avg('smoothed_attention'), samples=Count('id'), avg_confidence=Avg('confidence'))
+    # One row per student and per screen-capture participant, from the running totals
+    # (predictions themselves are pruned after a while)
+    sections = {
+        e.student_id: e.section for e in session.course.enrollments.select_related('section')
     }
-    dominant = {}
-    for row in preds.values('student', 'participant', 'smoothed_emotion').annotate(n=Count('id')):
-        key = (row['student'], row['participant'])
-        best = dominant.get(key)
-        if best is None or row['n'] > best[1]:
-            dominant[key] = (row['smoothed_emotion'], row['n'])
-
     students = []
-    for key, row in per_student.items():
-        student_id, participant = key
-        if student_id is None:
-            name = screen_participant_name(participant)
+    for stat in ParticipantStat.objects.filter(session=session, samples__gt=0).select_related('student'):
+        if stat.student_id is None:
+            name, section = screen_participant_name(stat.participant), None
         else:
-            name = f"{row['student__first_name']} {row['student__last_name']}".strip() or row['student__username']
+            name = stat.student.get_full_name() or stat.student.username
+            section = sections.get(stat.student_id)
+        if section_id is not None and (section is None or section.id != section_id):
+            continue
         students.append({
-            'student_id': student_id if student_id is not None else screen_participant_id(participant),
-            'source': 'student' if student_id is not None else 'screen',
+            'student_id': stat.student_id if stat.student_id is not None else screen_participant_id(stat.participant),
+            'source': 'student' if stat.student_id is not None else 'screen',
             'name': name,
-            'avg_attention': round((row['avg_attention'] or 0) * 100),
-            'dominant_emotion': dominant.get(key, ('neutral', 0))[0],
-            'avg_confidence': round((row['avg_confidence'] or 0) * 100),
-            'samples': row['samples'],
+            'section': {'id': section.id, 'name': section.name} if section else None,
+            'avg_attention': round(stat.attention_total / stat.samples * 100),
+            'dominant_emotion': stat.dominant_emotion,
+            'emotion_pcts': percentages(stat.emotion_counts, stat.samples),
+            'avg_confidence': round(stat.confidence_total / stat.samples * 100),
+            'samples': stat.samples,
         })
     students.sort(key=lambda s: s['avg_attention'])
 
@@ -147,7 +149,7 @@ class SessionReportView(InstructorSessionMixin, views.APIView):
         session = self.get_session(request, session_id)
         if not session:
             return self.not_found()
-        return Response(build_report(session))
+        return Response(build_report(session, section_param(request)))
 
 
 class SessionReportCSVView(InstructorSessionMixin, views.APIView):
@@ -155,7 +157,7 @@ class SessionReportCSVView(InstructorSessionMixin, views.APIView):
         session = self.get_session(request, session_id)
         if not session:
             return self.not_found()
-        report = build_report(session)
+        report = build_report(session, section_param(request))
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="session-{session.id}-report.csv"'
@@ -170,9 +172,11 @@ class SessionReportCSVView(InstructorSessionMixin, views.APIView):
             else:
                 writer.writerow([key, value])
         writer.writerow([])
-        writer.writerow(['Student', 'Avg attention %', 'Dominant emotion', 'Avg confidence %', 'Samples'])
+        writer.writerow(['Student', 'Section', 'Avg attention %', 'Dominant emotion', 'Avg confidence %', 'Samples']
+                        + [f'{e} %' for e in EMOTIONS])
         for s in report['students']:
-            writer.writerow([s['name'], s['avg_attention'], s['dominant_emotion'], s['avg_confidence'], s['samples']])
+            writer.writerow([s['name'], (s['section'] or {}).get('name', ''), s['avg_attention'], s['dominant_emotion'],
+                             s['avg_confidence'], s['samples']] + [s['emotion_pcts'][e] for e in EMOTIONS])
         writer.writerow([])
         writer.writerow(['Timestamp', 'Avg concentration %'])
         for point in report['timeline']:
@@ -196,12 +200,14 @@ class ExpressionSnapshotListView(InstructorSessionMixin, views.APIView):
                 'url': f'/api/analytics/sessions/{session.id}/expression-snapshots/{snap.id}/image/',
             }
         students = []
-        for enrollment in session.course.enrollments.select_related('student').order_by('student__first_name', 'student__username'):
+        for enrollment in (session.attendee_enrollments()
+                           .order_by('student__first_name', 'student__username')):
             student = enrollment.student
             students.append({
                 'student_id': student.id,
                 'name': student.get_full_name() or student.username,
                 'username': student.username,
+                'section': {'id': enrollment.section_id, 'name': enrollment.section.name} if enrollment.section else None,
                 'photos': photos.pop(student.id, {}),
             })
         # Students who were unenrolled after their photos were taken
@@ -211,6 +217,7 @@ class ExpressionSnapshotListView(InstructorSessionMixin, views.APIView):
                 'student_id': student_id,
                 'name': (student.get_full_name() or student.username) if student else f'Student {student_id}',
                 'username': student.username if student else '',
+                'section': None,
                 'photos': student_photos,
             })
         return Response({'emotions': list(EMOTIONS), 'students': students})

@@ -17,23 +17,100 @@ export interface StudentData {
   /** Latest live camera preview (data URL) relayed by the server; memory only, cleared when offline */
   live_thumb?: string;
   last_update?: number; // epoch ms
+  /** Set when the latest reading came from the shared screen */
+  via?: 'screen';
+  /** The face on the shared screen behind this tile (negative id), used to (re)name it */
+  screen_id?: number;
+  /** How the face got its name: recognised automatically, or named by the instructor */
+  match?: ScreenMatch;
+  section?: SectionRef | null;
 }
 
-export interface ScreenFace {
-  student_id: number;
+export interface SectionRef {
+  id: number;
   name: string;
+}
+
+export type ScreenMatch = 'auto' | 'manual' | null;
+
+export interface ScreenFace {
+  /** The student's user id when recognised, otherwise the screen face id (negative) */
+  student_id: number;
+  screen_id: number;
+  name: string;
+  match: ScreenMatch;
   box: [number, number, number, number]; // x, y, w, h as fractions of the frame
   emotion: EmotionType;
   attention: number;
+  /** Face cut from the analysed frame by the server (memory only) */
+  thumb?: string | null;
+}
+
+export interface SectionInfo extends SectionRef {
+  /** Invite code: /join/<join_code> puts new students straight into this section */
+  join_code: string;
+  total_students: number;
 }
 
 export interface CourseInfo {
   id: number;
   title: string;
   code: string;
-  /** Random code behind the student join link /join/<join_code> */
+  /** Random code behind the class-wide join link /join/<join_code> (students land without a section) */
   join_code: string;
   total_students: number;
+  unassigned_students?: number;
+  sections?: SectionInfo[];
+}
+
+export interface EnrollmentRow {
+  id: number;
+  student: AuthUser;
+  course: { id: number; code: string; title: string };
+  section: SectionRef | null;
+  enrolled_at: string;
+}
+
+export interface ImportResult {
+  added: string[];
+  moved: string[];
+  already: string[];
+  not_found: string[];
+  not_student: string[];
+}
+
+export interface MeetInfo {
+  session: {
+    id: number;
+    title: string;
+    status: SessionInfo['status'];
+    scheduled_for: string | null;
+    started_at: string | null;
+    sections: string[];
+  };
+  course: { code: string; title: string };
+  instructor: string;
+  meetings_enabled: boolean;
+  /** New students can create their account from this link (it decides their section) */
+  can_register: boolean;
+  viewer: {
+    signed_in: boolean;
+    name?: string;
+    role?: AuthUser['role'];
+    host?: boolean;
+    enrolled?: boolean;
+    allowed?: boolean;
+    consent_given?: boolean;
+  };
+}
+
+/** Pass for the LiveKit meeting room of a session */
+export interface MeetingPass {
+  url: string;
+  token: string;
+  room: string;
+  identity: string;
+  host: boolean;
 }
 
 export interface ExpressionPhoto {
@@ -47,13 +124,16 @@ export interface ExpressionPhotoRow {
   student_id: number;
   name: string;
   username: string;
+  section?: SectionRef | null;
   photos: Partial<Record<EmotionType, ExpressionPhoto>>;
 }
 
 export interface JoinInfo {
   course: { code: string; title: string };
+  /** Set when the link is a section invite */
+  section?: string | null;
   instructor: string;
-  live_session: { id: number; title: string } | null;
+  live_session: { id: number; title: string; join_code?: string } | null;
 }
 
 export interface TimelinePoint {
@@ -95,6 +175,13 @@ export interface SessionInfo {
   started_at: string | null;
   ended_at: string | null;
   course?: CourseInfo;
+  /** Meeting link /meet/<join_code> */
+  join_code?: string;
+  session_code?: string;
+  /** Sections this session is for; empty = the whole class */
+  sections?: SectionRef[];
+  scheduled_for?: string | null;
+  attendee_count?: number;
 }
 
 export interface AuthUser {
@@ -133,8 +220,10 @@ export interface ReportData {
   students: {
     student_id: number;
     name: string;
+    section?: SectionRef | null;
     avg_attention: number;
     dominant_emotion: EmotionType;
+    emotion_pcts?: EmotionRecord;
     avg_confidence: number;
     samples: number;
   }[];

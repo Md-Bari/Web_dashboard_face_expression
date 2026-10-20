@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { AlertTriangle, TrendingDown, TrendingUp, Trophy, Cpu, ShieldCheck, Lightbulb } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { Card, PageTitle } from './ui';
 
 interface Insight {
@@ -20,7 +21,8 @@ const TONE = {
 
 /** Plain-language findings derived from the live telemetry (explainability for the instructor). */
 export function InsightsView() {
-  const { snapshot, trend, students, modelStatus } = useDashboardStore();
+  const { trend, modelStatus } = useDashboardStore();
+  const { snapshot, students, active, label } = useSectionView();
 
   const insights = useMemo<Insight[]>(() => {
     const out: Insight[] = [];
@@ -80,7 +82,10 @@ export function InsightsView() {
 
   return (
     <div className="space-y-4">
-      <PageTitle title="AI Insights" subtitle="Findings derived from real-time sentiment and gaze telemetry" />
+      <PageTitle
+        title="AI Insights"
+        subtitle={`Findings derived from real-time sentiment and gaze telemetry${active ? ` · ${label} (trends: all sections)` : ''}`}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {insights.map((item, i) => (

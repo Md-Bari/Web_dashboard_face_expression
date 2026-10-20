@@ -217,6 +217,17 @@ MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
 EXPRESSION_SNAPSHOTS_ENABLED = os.environ.get('EXPRESSION_SNAPSHOTS_ENABLED', 'True') == 'True'
 # Ignore low-confidence predictions so a misread cannot take a student's only slot for that class
 EXPRESSION_SNAPSHOT_MIN_CONFIDENCE = float(os.environ.get('EXPRESSION_SNAPSHOT_MIN_CONFIDENCE', '0.5'))
+# FACE_RECOGNITION_ENABLED: name the faces in the instructor's shared screen after enrolled
+# students (needs models/face_recognition_sface_2021dec.onnx). Keeps 128-number face templates
+# of consenting students (no images); withdrawing consent deletes them.
+FACE_RECOGNITION_ENABLED = os.environ.get('FACE_RECOGNITION_ENABLED', 'True') == 'True'
+
+# Video meetings (LiveKit Cloud or a self-hosted LiveKit server). Empty: meetings are disabled.
+LIVEKIT_URL = os.environ.get('LIVEKIT_URL', '')
+LIVEKIT_API_KEY = os.environ.get('LIVEKIT_API_KEY', '')
+LIVEKIT_API_SECRET = os.environ.get('LIVEKIT_API_SECRET', '')
+# A live session nobody ended is ended automatically after this many hours
+SESSION_MAX_HOURS = float(os.environ.get('SESSION_MAX_HOURS', '4'))
 
 # WhiteNoise compresses and serves the collected static files under ASGI (Daphne).
 STORAGES = {

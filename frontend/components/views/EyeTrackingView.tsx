@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { formatClock } from '@/lib/format';
 import { Avatar } from '@/components/dashboard/Avatar';
 import { AttentionBar, Card, PageTitle, Stat } from './ui';
@@ -16,7 +16,7 @@ const BINS = [
 ];
 
 export function EyeTrackingView() {
-  const { snapshot, students } = useDashboardStore();
+  const { snapshot, students, active } = useSectionView();
   const reporting = students.filter((s) => s.online && s.has_data !== false);
 
   const histogram = BINS.map((b) => ({
@@ -52,7 +52,11 @@ export function EyeTrackingView() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <Card title="Concentration Over Time" subtitle="Class average per aggregation cycle" className="xl:col-span-8">
+        <Card
+          title="Concentration Over Time"
+          subtitle={active ? 'Class average per aggregation cycle · all sections' : 'Class average per aggregation cycle'}
+          className="xl:col-span-8"
+        >
           <div className="h-[240px]">
             {timeline.length < 2 ? (
               <p className="h-full flex items-center justify-center text-xs text-slate-400">Collecting data…</p>

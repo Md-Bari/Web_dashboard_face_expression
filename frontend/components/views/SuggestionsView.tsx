@@ -16,6 +16,7 @@ const CATEGORY_STYLE: Record<string, string> = {
 
 export function SuggestionsView() {
   const suggestions = useDashboardStore((s) => s.suggestions);
+  const sectionChosen = useDashboardStore((s) => s.sectionFilter !== 'all');
   const { dismiss } = useSuggestionActions();
   const [category, setCategory] = useState<string>('ALL');
 
@@ -25,7 +26,9 @@ export function SuggestionsView() {
     <div className="space-y-4">
       <PageTitle
         title="Teaching Suggestions"
-        subtitle="Rule-based interventions generated from live sentiment and concentration"
+        subtitle={`Rule-based interventions generated from live sentiment and concentration${
+          sectionChosen ? ' · for the whole class' : ''
+        }`}
         action={
           <div className="flex flex-wrap gap-1.5">
             {['ALL', 'CONFUSION', 'ENGAGEMENT', 'FATIGUE', 'PARTICIPATION'].map((c) => (

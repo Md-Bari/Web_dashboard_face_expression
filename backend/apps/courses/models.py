@@ -30,12 +30,31 @@ class Course(models.Model):
         return f"{self.code} - {self.title}"
 
 
+class Section(models.Model):
+    """A group of students inside a class (e.g. "A"); its invite link puts students straight into it."""
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='sections')
+    name = models.CharField(max_length=50)
+    join_code = models.CharField(max_length=12, unique=True, default=generate_join_code)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        unique_together = ('course', 'name')
+
+    def __str__(self):
+        return f"{self.course.code} / {self.name}"
+
+
 class Enrollment(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='enrollments')
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='enrollments'
+    )
+    # Null: in the class but not placed in a section yet (e.g. joined with the class-wide link)
+    section = models.ForeignKey(
+        Section, on_delete=models.SET_NULL, null=True, blank=True, related_name='enrollments'
     )
     enrolled_at = models.DateTimeField(auto_now_add=True)
 
@@ -54,12 +73,35 @@ class ClassSession(models.Model):
     )
 
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='sessions')
+    # Which sections attend; none selected = the whole class
+    sections = models.ManyToManyField(Section, blank=True, related_name='sessions')
     title = models.CharField(max_length=200)  # e.g. Data Structures - Lecture 5
     session_code = models.CharField(max_length=50, unique=True)
+    # Meeting link /meet/<join_code>
+    join_code = models.CharField(max_length=12, unique=True, default=generate_join_code)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SCHEDULED')
+    scheduled_for = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def room_name(self):
+        """LiveKit room of this session's meeting."""
+        return f"emp-edu-session-{self.id}"
+
+    def allows(self, enrollment):
+        """Whether an enrolled student belongs to the sections this session is for."""
+        if enrollment is None or enrollment.course_id != self.course_id:
+            return False
+        section_ids = set(self.sections.values_list('id', flat=True))
+        return not section_ids or enrollment.section_id in section_ids
+
+    def attendee_enrollments(self):
+        """Enrollments of the students this session is for (its sections, or the whole class)."""
+        qs = self.course.enrollments.select_related('student', 'section')
+        section_ids = list(self.sections.values_list('id', flat=True))
+        return qs.filter(section_id__in=section_ids) if section_ids else qs
 
     def start_session(self):
         self.status = 'LIVE'

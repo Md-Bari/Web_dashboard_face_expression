@@ -115,17 +115,77 @@ Everyone uses the same page, `/login`, and is sent to the right place by role:
 | --- | --- | --- |
 | `admin` (any superuser) | Dashboard | See and run every course and session |
 | `instructor` | Dashboard | Create/run sessions for their own courses |
-| `student` | `/student` | Stream their own webcam to the live session of a course they're enrolled in |
+| `student` | `/student` | Join their class meetings (meeting link) or stream their webcam only |
 
 The guest portal (pick a name from the roster, no account) is only available while `ALLOW_GUEST_STUDENTS`
 is on (defaults to `DEBUG`).
 
-### Monitoring an online class (Meet / Zoom / Teams)
+### Classes, sections and video classes
+The platform runs its own Meet-style video classes, so every student's expression comes from their own camera.
+
+```
+Instructor
+ └─ Class            e.g. "CSE Batch 2024"   (Classes page)
+     └─ Section      e.g. "A", "B"            each with its own invite link
+         └─ Students
+ └─ Session          title, class, sections (none = whole class), optional date/time
+                     -> meeting link /meet/<code>   (Sessions page)
+```
+
+**Instructor**
+1. **Classes**: create a class (it starts with section A), add sections, and add students: share a section's
+   invite link (`/join/<code>`: students sign in or create an account and land in that section), add an existing
+   account by username/email, or import a CSV (`username or email[,section]` per line; missing sections are
+   created). Students can be moved between sections or removed.
+2. **Sessions**: schedule a session for one or more sections (or the whole class) and copy its **meeting link**.
+   *Start now* / *Start* makes it live; opening the meeting link as the instructor also starts it.
+3. **In the meeting** (`/meet/<code>`): video grid, mic/camera/screen share, chat, participants (raised hands
+   first; mute or remove a student), **Insights** (live class expression shares, low attention, suggestions) and
+   each student's live expression on their tile. **End class** ends the session and disconnects everyone.
+4. **Dashboard**: the filter bar picks the **Class**, **Section** and **Session** shown; the section filter
+   narrows the student grid, Students, Expression Photos and Reports (and the CSV). Reports keep per-student
+   results permanently (running totals, `ParticipantStat`).
+
+**Student**: open the meeting link → sign in or create an account (the link adds them to the class when the
+session is for one section or the whole class) → camera consent → camera/mic check → class. Students only get
+into sessions for their own section; early arrivals wait and enter automatically when the class starts.
+While their camera is on, a 640 px frame is analysed about every 0.7 s; camera off means nothing is analysed.
+The class video and audio are never recorded.
+
+Live sessions that are never ended are ended automatically after `SESSION_MAX_HOURS` (default 4).
+
+**Video service (LiveKit)**: set in `.env` (passed to the backend and the Celery worker):
+
+```
+LIVEKIT_URL=wss://<project>.livekit.cloud      # or your own LiveKit server
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
+```
+
+LiveKit Cloud works from anywhere (its free plan covers a few classes a month). A self-hosted LiveKit server
+(free, open source) needs its ports reachable from the internet - the Cloudflare quick tunnel only carries the
+website, not the video. Without these settings the meeting link says video meetings are off; everything else
+works.
+
 In **Live Monitoring** (or *Monitor screen* in the dashboard ribbon), share the meeting window in gallery
-view. About once a second a frame goes to the server, which detects every face (up to 49), classifies it
-and tracks it as an anonymous **Screen face N** tile. These faces count in the class statistics, suggestions
-and reports. Faces are numbered by position, so a gallery reshuffle can renumber them. Tell participants
-their video is being analysed.
+view. About once a second a frame goes to the server, which detects every face (up to 49) and classifies it.
+
+- **Real faces only**: screen detections need a higher detector score (0.8), human landmark proportions
+  (two level eyes above a nose above a mouth) and must appear in two frames in a row, so text, logos, video
+  thumbnails and camera-off avatars do not become tiles. Tile thumbnails are cut by the server from the
+  exact frame it analysed.
+- **Names**: each face is compared with the face templates of the course's consenting students (SFace,
+  128 numbers per template, no images). A match puts the face on the **student's own tile** and its readings
+  in their report; anything else is an anonymous **Screen face N**.
+- **Naming by hand**: click a face (chips under the preview, or the tile's *Name this face*) to pick an
+  enrolled student, type another name, or remove a wrong name. Naming a consenting student stores a template,
+  so they are recognised automatically from then on.
+- Templates come from the student's own webcam stream (one every 30 s, up to 5), from the instructor naming
+  them, and from their saved expression photos. Withdrawing consent deletes them.
+  Setting: `FACE_RECOGNITION_ENABLED` (default `True`).
+
+All screen faces count in the class statistics, suggestions and reports. Tell participants their video is
+being analysed.
 
 Upgrading from an older version that ran `seed_data`? Remove the demo accounts, course and analytics with
 `python manage.py purge_demo_data` (lists them) and `python manage.py purge_demo_data --yes` (deletes them).
@@ -181,6 +241,7 @@ channel layer, and aggregates snapshots inside the ASGI process.
 | --- | --- |
 | `yolo_face_expression_ensemble.onnx` | 5-fold YOLO11m expression classifier, input `[N,3,256,256]` RGB 0-1, output probabilities |
 | `face_detection_yunet_2023mar.onnx` | YuNet face detector (OpenCV `FaceDetectorYN`) |
+| `face_recognition_sface_2021dec.onnx` | Optional SFace recogniser (OpenCV `FaceRecognizerSF`) that names screen faces; download from the [OpenCV model zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface). Without it, screen faces stay anonymous until named by hand |
 | `deployment_metadata.json` | Classes, image size, face margin and detector file name used by the loader |
 
 Pipeline (`backend/inference/model_loader.py`): detect the largest face, grow the box by `face_margin`,

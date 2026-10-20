@@ -8,23 +8,21 @@ import { describeMediaError, openCamera, openScreen, type MediaKind } from './me
 /**
  * Instructor capture: share a Google Meet / Zoom / Teams window (or any screen), or use a
  * camera pointed at the classroom, and send a downscaled frame about once a second over the
- * instructor socket. The server finds every face, analyses it and tracks it as an anonymous
- * "Screen face N".
+ * instructor socket. The server finds every real face, analyses it and puts it on the matching
+ * student's tile (face recognition) or on an anonymous "Screen face N" tile the instructor can name.
  *
  * Lives outside React so sharing keeps running while the instructor switches dashboard tabs.
- * PRIVACY: frames are analysed in server memory only; face thumbnails are cropped here in the
- * browser for the tiles and never uploaded.
+ * PRIVACY: frames are analysed in server memory only; the face thumbnails the server sends back
+ * are cut from the analysed frame and never stored.
  */
 
 const FRAME_INTERVAL_MS = 1000;
 const MAX_FRAME_WIDTH = 1280;
-const THUMB_SIZE = 112;
 
 let stream: MediaStream | null = null;
 let video: HTMLVideoElement | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 const frameCanvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-const thumbCanvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 const listeners = new Set<(s: MediaStream | null) => void>();
 
 const store = () => useDashboardStore.getState();
@@ -90,24 +88,12 @@ function sendFrame() {
   }
 }
 
-function cropThumbnails(faces: ScreenFace[]) {
-  const thumbs: Record<number, string> = {};
-  if (!video || !thumbCanvas || video.videoWidth === 0) return thumbs;
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  thumbCanvas.width = THUMB_SIZE;
-  thumbCanvas.height = THUMB_SIZE;
-  const ctx = thumbCanvas.getContext('2d');
-  if (!ctx) return thumbs;
-  for (const face of faces) {
-    const [x, y, w, h] = face.box;
-    const side = Math.max(w * vw, h * vh) * 1.4;
-    const cx = (x + w / 2) * vw;
-    const cy = (y + h / 2) * vh;
-    ctx.drawImage(video, cx - side / 2, cy - side / 2, side, side, 0, 0, THUMB_SIZE, THUMB_SIZE);
-    thumbs[face.student_id] = thumbCanvas.toDataURL('image/jpeg', 0.7);
-  }
-  return thumbs;
+/**
+ * Name a face on the shared screen: an enrolled student (`student_id`), anyone else (`name`),
+ * or neither to remove the name. The server replies with a `screen.label` message.
+ */
+export function labelScreenFace(screenId: number, label: { student_id?: number; name?: string }) {
+  return sendInstructorAction('screen_label', { screen_id: screenId, ...label });
 }
 
 /** Called by the instructor socket for every `screen.result` message. */
@@ -115,6 +101,7 @@ export function handleScreenResult(result: {
   faces: ScreenFace[];
   latency_ms?: number;
   model_loaded?: boolean;
+  recognition?: boolean;
   error?: string;
 }) {
   if (!stream) return;
@@ -127,6 +114,13 @@ export function handleScreenResult(result: {
       store().screen.source === 'camera'
         ? 'No faces found. Point the camera at the class with good lighting.'
         : 'No faces found. Share the meeting window in gallery view.';
-  store().setScreen({ faces, latencyMs: result.latency_ms ?? 0, message });
-  if (faces.length) store().applyThumbnails(cropThumbnails(faces));
+  store().setScreen({
+    faces,
+    latencyMs: result.latency_ms ?? 0,
+    message,
+    recognition: result.recognition ?? store().screen.recognition,
+  });
+  const thumbs: Record<number, string> = {};
+  for (const face of faces) if (face.thumb) thumbs[face.student_id] = face.thumb;
+  if (faces.length) store().applyThumbnails(thumbs);
 }

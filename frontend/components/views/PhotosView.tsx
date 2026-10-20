@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ImageOff, RefreshCw, Search, X } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
+import { matchesSection } from '@/lib/sections';
 import { api } from '@/lib/api';
 import { EMOTIONS, EMOTION_META, type EmotionType } from '@/lib/emotions';
 import type { ExpressionPhoto, ExpressionPhotoRow } from '@/lib/types';
@@ -19,6 +20,7 @@ interface Selected {
 /** First-seen expression photos: one row per student, one slot per expression class. */
 export function PhotosView() {
   const sessionId = useDashboardStore((s) => s.session?.id);
+  const sectionFilter = useDashboardStore((s) => s.sectionFilter);
   const [rows, setRows] = useState<ExpressionPhotoRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,8 +76,12 @@ export function PhotosView() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (rows ?? []).filter((r) => !q || r.name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q));
-  }, [rows, query]);
+    return (rows ?? []).filter(
+      (r) =>
+        matchesSection(r.section, sectionFilter) &&
+        (!q || r.name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q))
+    );
+  }, [rows, query, sectionFilter]);
 
   const totalPhotos = (rows ?? []).reduce((n, r) => n + Object.keys(r.photos).length, 0);
 
@@ -133,7 +139,10 @@ export function PhotosView() {
           return (
             <Card key={row.student_id}>
               <div className="flex items-baseline justify-between gap-2 mb-3">
-                <p className="text-sm font-bold text-slate-900 truncate">{row.name}</p>
+                <p className="text-sm font-bold text-slate-900 truncate">
+                  {row.name}
+                  {row.section && <span className="ml-1.5 text-[11px] font-semibold text-slate-400">Section {row.section.name}</span>}
+                </p>
                 <span className="text-[11px] font-medium text-slate-500 shrink-0">
                   {count} / {EMOTIONS.length} expressions
                 </span>

@@ -82,6 +82,15 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
         case 'screen.result':
           handleScreenResult(payload as unknown as Parameters<typeof handleScreenResult>[0]);
           break;
+        case 'participant.removed':
+          store().removeStudent((payload.data as { student_id: number }).student_id);
+          break;
+        case 'screen.label': {
+          const { ok, message } = payload as unknown as { ok: boolean; message: string };
+          store().setScreen({ labelResult: { ok, message, at: Date.now() } });
+          if (ok) store().logActivity('system', message);
+          break;
+        }
         case 'model.status':
           store().setModelStatus(payload.data as Partial<ModelStatusData>);
           break;

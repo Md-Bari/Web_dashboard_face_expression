@@ -1,32 +1,44 @@
 'use client';
 
-import React, { use, useEffect, useState } from 'react';
+import React, { use, useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, GraduationCap, Loader2, Radio } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import type { AuthUser, JoinInfo } from '@/lib/types';
-
-type Mode = 'signin' | 'register';
+import { AccountForms } from '@/components/auth/AccountForms';
 
 /**
- * Student join link shared by the instructor (/join/<course join code>).
- * Signed-in students are enrolled straight away; everyone else signs in or creates a
- * student account here, which also enrolls them, and then lands on the student portal.
+ * Class or section invite link shared by the instructor (/join/<code>).
+ * Signed-in students are enrolled straight away (a section link also places them in that
+ * section); everyone else signs in or creates a student account here. A class that is live
+ * opens its meeting; otherwise the student portal waits for the next one.
  */
 export default function JoinPage({ params }: { params: Promise<{ code: string }> }) {
+  // The link code is only known per request: render the page inside a Suspense boundary
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-[#0B1528]">
+          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+        </main>
+      }
+    >
+      <Join params={params} />
+    </Suspense>
+  );
+}
+
+function Join({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params);
   const router = useRouter();
   const [info, setInfo] = useState<JoinInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [staff, setStaff] = useState<AuthUser | null>(null);
   const [checkingUser, setCheckingUser] = useState(true);
-  const [mode, setMode] = useState<Mode>('register');
-  const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [form, setForm] = useState({ first_name: '', last_name: '', username: '', email: '', password: '' });
 
-  const goToPortal = (sessionId?: number) => router.replace(sessionId ? `/student?session=${sessionId}` : '/student');
+  const goOn = (live: JoinInfo['live_session']) =>
+    router.replace(live?.join_code ? `/meet/${live.join_code}` : live ? `/student?session=${live.id}` : '/student');
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +59,7 @@ export default function JoinPage({ params }: { params: Promise<{ code: string }>
           setStaff(me);
         } else {
           const joined = await api.joinEnroll(code);
-          if (!cancelled) goToPortal(joined.live_session?.id);
+          if (!cancelled) goOn(joined.live_session);
           return;
         }
       } catch {
@@ -60,48 +72,6 @@ export default function JoinPage({ params }: { params: Promise<{ code: string }>
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
-
-  const set = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [field]: e.target.value }));
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setFormError(null);
-    try {
-      if (mode === 'register') {
-        const result = await api.joinRegister(code, {
-          first_name: form.first_name.trim(),
-          last_name: form.last_name.trim(),
-          username: form.username.trim(),
-          email: form.email.trim(),
-          password: form.password,
-        });
-        goToPortal(result.live_session?.id);
-      } else {
-        const { user } = await api.login(form.username.trim(), form.password);
-        if (user.role !== 'student') {
-          setStaff(user);
-          setBusy(false);
-          return;
-        }
-        const joined = await api.joinEnroll(code);
-        goToPortal(joined.live_session?.id);
-      }
-    } catch (err) {
-      if (err instanceof ApiError && mode === 'signin' && (err.status === 400 || err.status === 401)) {
-        setFormError('Incorrect username or password.');
-      } else if (err instanceof ApiError && err.status === 429) {
-        setFormError('Too many sign-ups from this network. Try again later.');
-      } else {
-        setFormError(err instanceof ApiError ? err.message : 'Cannot reach the class server.');
-      }
-      setBusy(false);
-    }
-  };
-
-  const input =
-    'mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-hidden focus:border-blue-500';
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-[#0B1528] p-4 sm:p-6">
@@ -116,7 +86,8 @@ export default function JoinPage({ params }: { params: Promise<{ code: string }>
             </h1>
             {info && (
               <p className="text-[11px] text-slate-500 truncate">
-                {info.course.code} · {info.instructor}
+                {info.course.code}
+                {info.section ? ` · Section ${info.section}` : ''} · {info.instructor}
               </p>
             )}
           </div>
@@ -156,86 +127,21 @@ export default function JoinPage({ params }: { params: Promise<{ code: string }>
             </Link>
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-2 gap-1 p-1 mb-4 bg-slate-100 rounded-xl text-xs font-semibold">
-              {(
-                [
-                  ['register', 'Create account'],
-                  ['signin', 'I have an account'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    setMode(value);
-                    setFormError(null);
-                  }}
-                  className={`py-2 rounded-lg transition-colors ${mode === value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <form onSubmit={submit} className="space-y-3">
-              {mode === 'register' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">First name</span>
-                    <input value={form.first_name} onChange={set('first_name')} required autoComplete="given-name" className={input} />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">Last name</span>
-                    <input value={form.last_name} onChange={set('last_name')} autoComplete="family-name" className={input} />
-                  </label>
-                </div>
-              )}
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-700">Username</span>
-                <input
-                  value={form.username}
-                  onChange={set('username')}
-                  required
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  className={input}
-                />
-              </label>
-              {mode === 'register' && (
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">Email (optional)</span>
-                  <input type="email" value={form.email} onChange={set('email')} autoComplete="email" className={input} />
-                </label>
-              )}
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-700">Password</span>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={set('password')}
-                  required
-                  minLength={mode === 'register' ? 8 : undefined}
-                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-                  className={input}
-                />
-                {mode === 'register' && (
-                  <span className="block mt-1 text-[11px] text-slate-400">At least 8 characters, not only numbers.</span>
-                )}
-              </label>
-
-              {formError && <p className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2.5">{formError}</p>}
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors disabled:opacity-60"
-              >
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                {mode === 'register' ? 'Create account & join' : 'Sign in & join'}
-              </button>
-            </form>
-          </>
+          <AccountForms
+            onRegister={async (data) => {
+              const result = await api.joinRegister(code, data);
+              goOn(result.live_session);
+            }}
+            onSignIn={async (username, password) => {
+              const { user } = await api.login(username, password);
+              if (user.role !== 'student') {
+                setStaff(user);
+                return;
+              }
+              const joined = await api.joinEnroll(code);
+              goOn(joined.live_session);
+            }}
+          />
         )}
       </div>
     </main>

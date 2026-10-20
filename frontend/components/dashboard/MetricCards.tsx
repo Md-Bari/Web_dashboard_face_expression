@@ -2,12 +2,12 @@
 
 import React from 'react';
 import { Users, Target, ArrowUp, ArrowDown } from 'lucide-react';
-import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { concentrationLabel } from '@/lib/format';
 import { EMOTIONS, EMOTION_META } from '@/lib/emotions';
 
 export function MetricCards() {
-  const { snapshot, previousSnapshot, students } = useDashboardStore();
+  const { snapshot, previousSnapshot, students } = useSectionView();
   const onlineCount = students.filter((s) => s.online).length;
   const quality = concentrationLabel(snapshot.avg_concentration);
 

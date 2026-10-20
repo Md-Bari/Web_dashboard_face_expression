@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { Camera, MonitorUp, MonitorX, ShieldAlert } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Camera, MonitorUp, MonitorX, ShieldAlert, Tag, UserCheck } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { onScreenStream, startCapture, stopScreenCapture } from '@/lib/screenCapture';
 import { emotionMeta } from '@/lib/emotions';
+import type { ScreenFace } from '@/lib/types';
+import { Avatar } from '@/components/dashboard/Avatar';
+import { NameFaceDialog } from '@/components/dashboard/NameFaceDialog';
 import { Card } from './ui';
 
 
@@ -45,10 +48,13 @@ export function ScreenShareButton({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** Live Monitoring card: shared-screen preview with the faces the server found. */
+/** Live Monitoring card: shared-screen preview with the faces the server found and their names. */
 export function ScreenMonitor() {
   const { screen } = useDashboardStore();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [namingId, setNamingId] = useState<number | null>(null);
+  const naming: ScreenFace | undefined = screen.faces.find((f) => f.screen_id === namingId);
+  const unnamed = screen.faces.filter((f) => !f.match).length;
 
   useEffect(
     () =>
@@ -74,7 +80,7 @@ export function ScreenMonitor() {
           const meta = emotionMeta(face.emotion);
           return (
             <div
-              key={face.student_id}
+              key={face.screen_id}
               className="absolute border-2 rounded-md pointer-events-none"
               style={{
                 left: `${x * 100}%`,
@@ -85,7 +91,7 @@ export function ScreenMonitor() {
               }}
             >
               <span className="absolute -top-5 left-0 whitespace-nowrap text-[10px] font-bold text-white px-1 rounded bg-slate-900/85">
-                #{-face.student_id} · {meta.label} · {Math.round(face.attention * 100)}%
+                {face.name} · {meta.label}
               </span>
             </div>
           );
@@ -95,18 +101,63 @@ export function ScreenMonitor() {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
         <span>
           {screen.sharing
-            ? `${screen.faces.length} face${screen.faces.length === 1 ? '' : 's'} detected${
-                screen.latencyMs ? ` · ${screen.latencyMs} ms` : ''
-              }`
-            : 'Off. Each face found becomes a "Screen face N" tile and counts in the class statistics.'}
+            ? `${screen.faces.length} face${screen.faces.length === 1 ? '' : 's'} found${
+                unnamed ? ` · ${unnamed} not named yet` : ''
+              }${screen.latencyMs ? ` · ${screen.latencyMs} ms` : ''}`
+            : "Off. Each real face found is matched to an enrolled student's tile by face recognition; faces it does not know get a \"Screen face N\" tile you can name."}
         </span>
         {screen.message && <span className="text-amber-600 font-medium">{screen.message}</span>}
       </div>
 
+      {screen.sharing && screen.faces.length > 0 && (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {screen.faces.map((face) => (
+            <li key={face.screen_id}>
+              <button
+                onClick={() => setNamingId(face.screen_id)}
+                title={face.match ? 'Change name' : 'Name this face'}
+                className={`inline-flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-xs font-semibold transition-colors ${
+                  face.match
+                    ? 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
+                    : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                <Avatar name={face.name} src={face.thumb ?? undefined} className="w-6 h-6 rounded-full text-[9px]" imgClassName="object-cover" />
+                <span className="max-w-[9rem] truncate">{face.name}</span>
+                {face.match ? (
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" aria-label={face.match === 'auto' ? 'recognised' : 'named by you'} />
+                ) : (
+                  <Tag className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {screen.sharing && !screen.recognition && (
+        <p className="mt-2 text-[11px] text-slate-500">
+          Face recognition is off on the server (no face recogniser model), so faces are not named automatically.
+          Click a face to name it.
+        </p>
+      )}
+
+      {naming && (
+        <NameFaceDialog
+          screenId={naming.screen_id}
+          currentName={naming.name}
+          currentStudentId={naming.student_id > 0 ? naming.student_id : null}
+          named={!!naming.match}
+          thumb={naming.thumb ?? undefined}
+          onClose={() => setNamingId(null)}
+        />
+      )}
+
       <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500">
         <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
         Tell participants their video is being analysed. Frames are processed in memory only; just the emotion
-        label and attention score are stored, under an anonymous number.
+        label and attention score are stored - under the student&apos;s name when recognised, otherwise under an
+        anonymous number.
       </p>
     </Card>
   );

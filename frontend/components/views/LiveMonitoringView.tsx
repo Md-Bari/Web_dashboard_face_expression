@@ -3,6 +3,7 @@
 import React from 'react';
 import { Activity, UserCheck, Sparkles, Info, Radio } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { formatClock } from '@/lib/format';
 import { StudentGrid } from '@/components/dashboard/StudentGrid';
 import { ScreenMonitor } from './ScreenMonitor';
@@ -16,7 +17,8 @@ const KIND_ICON = {
 } as const;
 
 export function LiveMonitoringView() {
-  const { activity, students, modelStatus } = useDashboardStore();
+  const { activity, modelStatus } = useDashboardStore();
+  const { students } = useSectionView();
   const enrolled = students.filter((s) => s.source !== 'screen');
   const online = enrolled.filter((s) => s.online).length;
   const screenFaces = students.length - enrolled.length;

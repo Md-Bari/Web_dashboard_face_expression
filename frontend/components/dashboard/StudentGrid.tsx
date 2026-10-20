@@ -1,31 +1,40 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { LayoutGrid, List, ChevronDown, Check, X, ShieldCheck } from 'lucide-react';
+import { LayoutGrid, List, ChevronDown, Check, X, ShieldCheck, MonitorUp, Tag } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { StudentCard } from './StudentCard';
 import { Avatar } from './Avatar';
+import { NameFaceDialog } from './NameFaceDialog';
 import { StudentData } from '@/lib/types';
 import { EMOTIONS, EMOTION_META, emotionMeta } from '@/lib/emotions';
 import { EmotionPill } from '@/components/views/ui';
+import { matchesSection } from '@/lib/sections';
 
 export function StudentGrid() {
-  const { students, filter, setFilter, viewMode, setViewMode, session } = useDashboardStore();
+  const { students, filter, setFilter, viewMode, setViewMode, session, sectionFilter } = useDashboardStore();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // Resolve from the store so an open modal keeps updating live
   const selectedStudent: StudentData | null = students.find((s) => s.id === selectedId) ?? null;
-  const setSelectedStudent = (s: StudentData | null) => setSelectedId(s ? s.id : null);
+  const [naming, setNaming] = useState(false);
+  const setSelectedStudent = (s: StudentData | null) => {
+    setSelectedId(s ? s.id : null);
+    setNaming(false);
+  };
+  // A face can be (re)named while it is on the shared screen
+  const nameable = !!selectedStudent?.screen_id && selectedStudent.via === 'screen' && selectedStudent.online;
 
   // Esc closes the student detail popup
   useEffect(() => {
-    if (selectedId === null) return;
+    if (selectedId === null || naming) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelectedId(null);
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+  }, [selectedId, naming]);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const filteredStudents = students.filter((s) => {
+    if (!matchesSection(s.section, sectionFilter, s.source === 'screen')) return false;
     if (filter === 'all') return true;
     return s.has_data !== false && s.emotion === filter;
   });
@@ -174,6 +183,18 @@ export function StudentGrid() {
         ))}
       </div>
 
+      {naming && selectedStudent?.screen_id && (
+        <NameFaceDialog
+          screenId={selectedStudent.screen_id}
+          currentName={selectedStudent.name}
+          currentStudentId={selectedStudent.id > 0 ? selectedStudent.id : null}
+          named={!!selectedStudent.match}
+          thumb={selectedStudent.live_thumb}
+          // If the face moves to the student's own tile, the popup closes as its tile disappears
+          onClose={() => setNaming(false)}
+        />
+      )}
+
       {/* Student Detail Modal */}
       {selectedStudent && (
         <div
@@ -215,10 +236,25 @@ export function StudentGrid() {
               <div>
                 <h3 className="font-bold text-slate-900 text-base">{selectedStudent.name}</h3>
                 <span className="inline-block mt-0.5 text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                  Student #{selectedStudent.id}
+                  {selectedStudent.id > 0 ? `Student #${selectedStudent.id}` : 'Not linked to a student'}
                 </span>
+                {selectedStudent.via === 'screen' && selectedStudent.match && (
+                  <span className="block mt-1 text-[11px] text-slate-500">
+                    {selectedStudent.match === 'auto' ? 'Recognised on the shared screen' : 'Named by you on the shared screen'}
+                  </span>
+                )}
               </div>
             </div>
+
+            {nameable && (
+              <button
+                onClick={() => setNaming(true)}
+                className="mb-4 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+              >
+                <Tag className="w-3.5 h-3.5" />
+                {selectedStudent.match ? 'Change name' : 'Name this face'}
+              </button>
+            )}
 
             {selectedStudent.has_data === false ? (
               <p className="text-xs text-slate-500 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
@@ -228,8 +264,9 @@ export function StudentGrid() {
             <div className="space-y-2.5 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-100">
               <div className="flex justify-between">
                 <span className="text-slate-500">Data source</span>
-                <span className="font-bold text-slate-900">
-                  {selectedStudent.source === 'screen' ? 'Screen capture + AI model' : 'Webcam + AI model'}
+                <span className="font-bold text-slate-900 inline-flex items-center gap-1">
+                  {selectedStudent.via === 'screen' && <MonitorUp className="w-3.5 h-3.5 text-slate-500" />}
+                  {selectedStudent.via === 'screen' ? 'Shared screen + AI model' : 'Webcam + AI model'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -260,8 +297,9 @@ export function StudentGrid() {
             <div className="mt-4 flex items-center gap-2 text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
               <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600" />
               <span>
-                Consent verified. The live preview is shown in memory only. Stored: expression label, attention score and
-                one face photo per expression - zero video recorded.
+                {selectedStudent.via === 'screen'
+                  ? 'Seen on your shared screen. The image is analysed in memory only; stored: expression label and attention score - zero video recorded.'
+                  : 'Consent verified. The live preview is shown in memory only. Stored: expression label, attention score and one face photo per expression - zero video recorded.'}
               </span>
             </div>
 

@@ -56,6 +56,10 @@ export default function StudentPortal() {
   const [message, setMessage] = useState<string | null>(null);
   const [fps, setFps] = useState(0);
   const [account, setAccount] = useState(false);
+  // Meeting link of the live class (the video class is the main way to attend)
+  const [meetCode, setMeetCode] = useState<string | null>(null);
+  // This device has no usable camera: the class meeting can still be joined without one
+  const [noCamera, setNoCamera] = useState(false);
   const router = useRouter();
   const { logout, loggingOut } = useLogout();
 
@@ -98,6 +102,7 @@ export default function StudentPortal() {
             return;
           }
           setLoadError(null);
+          setMeetCode(current.join_code ?? null);
           setLive({
             id: current.id,
             title: current.title,
@@ -212,7 +217,16 @@ export default function StudentPortal() {
     try {
       stream = await openCamera({ width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' });
     } catch (err) {
-      setMessage(describeMediaError(err, 'camera'));
+      const name = err instanceof DOMException || err instanceof Error ? err.name : '';
+      const missing = name === 'NotFoundError' || name === 'OverconstrainedError';
+      setNoCamera(missing);
+      setMessage(
+        missing
+          ? meetCode
+            ? 'No camera was found on this device. You can still join the class meeting without a camera.'
+            : 'No camera was found on this device. When your class is live you can join its meeting without a camera.'
+          : describeMediaError(err, 'camera')
+      );
       return;
     }
 
@@ -306,6 +320,18 @@ export default function StudentPortal() {
       </header>
 
       <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-6 flex flex-col items-center justify-center">
+        {meetCode && !isStreaming && (
+          <Link
+            href={`/meet/${meetCode}`}
+            className="mb-6 w-full max-w-md flex items-center gap-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 p-4 text-white shadow-lg"
+          >
+            <Video className="w-6 h-6 shrink-0" />
+            <span className="min-w-0">
+              <span className="block font-bold">Your class is live - join the class meeting</span>
+              <span className="block text-xs text-emerald-100">Video, audio and chat with your instructor and classmates</span>
+            </span>
+          </Link>
+        )}
         {loadError ? (
           <div className="flex items-center gap-2 text-sm text-slate-300 bg-slate-950 border border-slate-800 rounded-2xl p-6 max-w-md">
             {loadError.startsWith('Waiting') ? (
@@ -334,6 +360,7 @@ export default function StudentPortal() {
               {[
                 ['Live Preview:', 'Your instructor sees a small live picture of your camera on their dashboard while you stream.'],
                 ['Expression Photos:', 'The first time each expression (happy, sad, angry, fear, surprise, neutral) is clearly detected in a class, one photo of your face is saved for your instructor - at most six per class. Withdrawing consent deletes them.'],
+                ['Face Recognition:', 'A few face templates (numbers, not photos) are kept so your instructor sees your name when your face appears in a shared Meet / Zoom screen. Withdrawing consent deletes them.'],
                 ['No Video Recording:', 'No video or audio is ever recorded, downloaded, or stored.'],
                 ['In-Memory Processing:', 'Frames are downscaled to at most 640px wide and processed exclusively in volatile memory.'],
                 ['Right to Revoke:', 'You can stop your camera stream and withdraw consent at any point during class.'],
@@ -492,7 +519,17 @@ export default function StudentPortal() {
             </div>
 
             {message && (
-              <p className="mt-3 w-full text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5">{message}</p>
+              <div className="mt-3 w-full text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5">
+                <p>{message}</p>
+                {noCamera && meetCode && (
+                  <Link
+                    href={`/meet/${meetCode}`}
+                    className="mt-2.5 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+                  >
+                    <VideoOff className="w-4 h-4" /> Join class without camera
+                  </Link>
+                )}
+              </div>
             )}
 
             <div className="mt-4 w-full bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">

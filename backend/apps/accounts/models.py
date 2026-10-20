@@ -32,7 +32,9 @@ class User(AbstractUser):
         self.consent_timestamp = None
         self.save(update_fields=['consent_given', 'consent_timestamp'])
         # Withdrawing consent also removes the stored expression photos (rows and files)
+        # and the face templates used to recognise the student in a shared screen
         self.expression_snapshots.all().delete()
+        self.face_references.all().delete()
 
     @property
     def is_admin(self):

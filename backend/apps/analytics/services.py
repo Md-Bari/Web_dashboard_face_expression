@@ -1,10 +1,11 @@
 from collections import Counter
 from datetime import timedelta
+from django.db import transaction
 from django.utils import timezone
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from .emotions import empty_counts, percentages
-from .models import Prediction, SessionSnapshot, TeachingSuggestion
+from .models import ParticipantStat, Prediction, SessionSnapshot, TeachingSuggestion
 from apps.courses.models import ClassSession
 
 
@@ -48,8 +49,24 @@ class SmoothingEngine:
             smoothed_emotion=smoothed_emotion,
             smoothed_attention=smoothed_attention,
         )
+        SmoothingEngine.add_to_stats(prediction)
 
         return prediction
+
+    @staticmethod
+    def add_to_stats(prediction):
+        """Fold one prediction into the participant's running session totals (kept for the report)."""
+        who = ({'student': prediction.student} if prediction.student_id
+               else {'student': None, 'participant': prediction.participant})
+        with transaction.atomic():
+            stat, _ = ParticipantStat.objects.select_for_update().get_or_create(session=prediction.session, **who)
+            counts = {**empty_counts(), **stat.emotion_counts}
+            counts[prediction.smoothed_emotion] = counts.get(prediction.smoothed_emotion, 0) + 1
+            stat.emotion_counts = counts
+            stat.attention_total += prediction.smoothed_attention
+            stat.confidence_total += prediction.confidence
+            stat.samples += 1
+            stat.save()
 
 
 def serialize_suggestion(sug):
@@ -156,13 +173,18 @@ class AggregationService:
             low_conc_count = 0
             avg_conc = 0
 
-        snapshot = SessionSnapshot.objects.create(
+        snapshot = SessionSnapshot(
             session=session,
             total_students=total_active,
             emotion_counts=counts,
             avg_concentration=avg_conc,
             low_concentration_count=low_conc_count,
         )
+        if total_active:
+            snapshot.save()
+        else:
+            # Nobody active: tell the dashboards, but do not fill the history with empty rows
+            snapshot.timestamp = timezone.now()
 
         if total_active:
             AggregationService.evaluate_suggestions(

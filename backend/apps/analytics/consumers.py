@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.courses.access import get_instructor_session
 from apps.courses.models import ClassSession
-from apps.analytics import realtime, screen, snapshots
+from apps.analytics import identity, realtime, screen, snapshots
 from apps.analytics.inference_engine import aget_engine, engine_status, get_engine
 from apps.analytics.models import SessionSnapshot, TeachingSuggestion
 from apps.analytics.services import SmoothingEngine, AggregationService, serialize_suggestion
@@ -23,6 +23,11 @@ MIN_FRAME_INTERVAL = 0.4       # server-side cap of ~2.5 fps per student connect
 PRESENCE_WINDOW_SECONDS = 20
 MAX_SCREEN_FRAME_CHARS = 2_500_000   # a 1280px-wide JPEG of a video-call window
 MIN_SCREEN_FRAME_INTERVAL = 0.8
+HEARTBEAT_MIN_INTERVAL = 5.0     # presence broadcasts from one student connection, at most every 5 s
+MAX_EMBEDS_PER_FRAME = 6        # recognition work per screen frame (the rest wait for the next frame)
+RETRY_UNKNOWN_SECONDS = 2.0     # how often an unrecognised screen face is compared again
+REVERIFY_SECONDS = 20.0         # how often a recognised screen face is checked again
+KEEP_THRESHOLD = 0.36           # a recognised face keeps its name down to this similarity
 
 # WebSocket close codes
 CLOSE_UNAUTHORIZED = 4401
@@ -57,6 +62,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
         self.last_frame_at = 0.0
         self.told_no_model = False
         self.told_no_face = False
+        self.last_heartbeat_at = 0.0
 
         await self.accept()
 
@@ -69,6 +75,8 @@ class StudentConsumer(AsyncWebsocketConsumer):
 
         # Expressions already photographed for this student in this session (one photo per class)
         self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(self.session_id, self.user.id)
+        self.webcam_references = await database_sync_to_async(identity.reference_count)(self.user.id, 'webcam')
+        self.last_reference_at = 0.0
         realtime.register_student(self.session_id, self.user.id)
         self.registered = True
         realtime.ensure_running(self.session_id)
@@ -101,6 +109,17 @@ class StudentConsumer(AsyncWebsocketConsumer):
             return
 
         msg_type = payload.get('type')
+
+        if msg_type == 'heartbeat':
+            # In the class meeting without a camera: no frames, but still present
+            now = time.monotonic()
+            if now - self.last_heartbeat_at >= HEARTBEAT_MIN_INTERVAL:
+                self.last_heartbeat_at = now
+                await self.channel_layer.group_send(self.group_name, {
+                    "type": "broadcast_presence",
+                    "presence": {"student_id": self.user.id, "student_name": display_name(self.user), "online": True},
+                })
+            return
 
         if msg_type == 'consent.revoke':
             await self.revoke_consent()
@@ -163,6 +182,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
             await self.close(code=CLOSE_SESSION_NOT_LIVE)
             return
         await self.maybe_store_snapshot(result)
+        await self.maybe_store_reference(result)
 
         await self.channel_layer.group_send(self.group_name, {
             "type": "broadcast_student_update",
@@ -220,8 +240,11 @@ class StudentConsumer(AsyncWebsocketConsumer):
             if not user:
                 return CLOSE_UNAUTHORIZED, "Select a student identity to join this session."
 
-        if not session.course.enrollments.filter(student=user).exists():
+        enrollment = session.course.enrollments.filter(student=user).first()
+        if enrollment is None:
             return CLOSE_FORBIDDEN, "You are not enrolled in this course."
+        if not session.allows(enrollment):
+            return CLOSE_FORBIDDEN, "This class session is for another section."
         if not consent_ok:
             return CLOSE_CONSENT_REQUIRED, "Consent is required before transmitting webcam frames."
         if not user.consent_given:
@@ -257,6 +280,24 @@ class StudentConsumer(AsyncWebsocketConsumer):
             self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(
                 self.session_id, self.user.id,
             )
+
+    async def maybe_store_reference(self, result):
+        """Now and then keep a face template so the instructor's screen capture can name this student."""
+        now = time.monotonic()
+        compute = result.get('face_embedding')
+        if (compute is None or not identity.enabled() or self.webcam_references >= identity.MAX_PER_SOURCE
+                or now - self.last_reference_at < identity.WEBCAM_REFERENCE_INTERVAL):
+            return
+        self.last_reference_at = now
+        try:
+            embedding = await asyncio.to_thread(compute)
+            if embedding is None:
+                return
+            await database_sync_to_async(identity.add_reference)(self.user, embedding, 'webcam')
+            self.webcam_references += 1
+            identity.invalidate(self.session_id)
+        except Exception as exc:  # recognition must never break the live stream
+            print(f"[identity] {self.user.username}: {exc!r}")
 
     @database_sync_to_async
     def smooth_and_save(self, raw_emotion, raw_attention, confidence):
@@ -325,6 +366,8 @@ class InstructorConsumer(AsyncWebsocketConsumer):
             await self.trigger_aggregation()
         elif action == 'screen_frame':
             await self.accept_screen_frame(data)
+        elif action == 'screen_label':
+            await self.label_screen_face(data)
 
     # ------------------------------------------------------------------ screen capture
 
@@ -350,30 +393,43 @@ class InstructorConsumer(AsyncWebsocketConsumer):
                 }))
                 return
 
-            numbers = screen.get_tracker(self.session_id).assign([f['box'] for f in faces])
-            updates = await self.save_screen_faces(faces, numbers)
-            if updates is None:
+            tracker = screen.get_tracker(self.session_id)
+            numbers = tracker.assign([f['box'] for f in faces])
+            # Only faces seen in a few frames in a row count (no tiles for one-frame false detections)
+            pairs = [(f, n) for f, n in zip(faces, numbers) if tracker.confirmed(n)]
+            if pairs and engine.can_recognise and identity.enabled():
+                await self.identify_screen_faces(pairs, tracker, engine)
+
+            saved = await self.save_screen_faces(pairs, tracker)
+            if saved is None:
                 await self.send(text_data=json.dumps({
                     "type": "screen.result", "faces": [], "model_loaded": True,
                     "error": "The session is not live. Start the session to analyse the screen.",
                 }))
                 return
+            updates, removed = saved
 
+            for participant_id in removed:
+                await self.channel_layer.group_send(self.group_name, {
+                    "type": "broadcast_participant_removed", "student_id": participant_id,
+                })
             timestamp = int(time.time() * 1000)
             for update in updates:
                 await self.channel_layer.group_send(self.group_name, {
                     "type": "broadcast_student_update",
                     "student_update": {**update, "timestamp": timestamp},
                 })
-            # Boxes go back to this instructor only, for the preview overlay and tile thumbnails
+            # Boxes and face thumbnails go back to this instructor only (memory only, never stored)
             await self.send(text_data=json.dumps({
                 "type": "screen.result",
                 "model_loaded": True,
                 "latency_ms": engine.last_latency_ms,
+                "recognition": engine.can_recognise and identity.enabled(),
                 "faces": [
-                    {"student_id": u["student_id"], "name": u["name"], "box": f["box"],
-                     "emotion": u["emotion"], "attention": u["attention"]}
-                    for f, u in zip(faces, updates)
+                    {"student_id": u["student_id"], "screen_id": u["screen_id"], "name": u["name"],
+                     "match": u["match"], "box": f["box"], "emotion": u["emotion"],
+                     "attention": u["attention"], "thumb": f.get("thumb")}
+                    for (f, _), u in zip(pairs, updates)
                 ],
             }))
         except Exception as exc:  # never let one bad frame kill the socket
@@ -381,30 +437,162 @@ class InstructorConsumer(AsyncWebsocketConsumer):
         finally:
             self.screen_busy = False
 
+    async def identify_screen_faces(self, pairs, tracker, engine):
+        """Compare screen faces with the students' face templates and name the ones that match."""
+        now = time.monotonic()
+        due = []
+        for face, number in pairs:
+            track = tracker.tracks[number]
+            wait = REVERIFY_SECONDS if track['student_id'] is not None else RETRY_UNKNOWN_SECONDS
+            if face.get('embed') is None:
+                continue
+            if track['embedding'] is None or (not track['manual'] and now - track['embedded_at'] >= wait):
+                due.append((face, number))
+        if not due:
+            return
+        due.sort(key=lambda pair: tracker.tracks[pair[1]]['embedded_at'])  # longest-waiting first
+        due = due[:MAX_EMBEDS_PER_FRAME]
+
+        embeddings = await asyncio.to_thread(lambda: [face['embed']() for face, _ in due])
+        refs = await database_sync_to_async(identity.references_for)(self.session_id, engine.emotion_model)
+        for (_, number), embedding in zip(due, embeddings):
+            track = tracker.tracks.get(number)
+            if track is None or embedding is None:
+                continue
+            track['embedding'] = embedding
+            track['embedded_at'] = now
+            if not track['manual']:
+                self.auto_identify(tracker, number, refs.ranked(embedding, KEEP_THRESHOLD))
+
+    @staticmethod
+    def auto_identify(tracker, number, candidates):
+        """candidates: [(student_id, similarity)] best first. A student is on at most one face."""
+        track = tracker.tracks[number]
+        for student_id, similarity in candidates:
+            # A new name needs a clear match; the current one is kept down to KEEP_THRESHOLD
+            if student_id != track['student_id'] and similarity < identity.MATCH_THRESHOLD:
+                continue
+            if student_id in track['rejected']:
+                continue
+            holder = tracker.holder_of(student_id)
+            if holder is not None and holder != number:
+                other = tracker.tracks[holder]
+                if other['manual'] or other['score'] >= similarity:
+                    continue
+            tracker.set_student(number, student_id, manual=False, score=similarity)
+            return
+        if track['student_id'] is not None:
+            track.update(student_id=None, score=0.0)  # no longer looks like that student
+
     @database_sync_to_async
-    def save_screen_faces(self, faces, numbers):
-        session = ClassSession.objects.filter(id=self.session_id, status='LIVE').first()
+    def save_screen_faces(self, pairs, tracker):
+        """Store a prediction per confirmed screen face: under the student's name when identified."""
+        session = ClassSession.objects.select_related('course').filter(id=self.session_id, status='LIVE').first()
         if not session:
             return None
-        updates = []
-        for face, number in zip(faces, numbers):
+        wanted = {tracker.tracks[n]['student_id'] for _, n in pairs} - {None}
+        students = {
+            e.student_id: e.student
+            for e in session.course.enrollments.filter(student_id__in=wanted).select_related('student')
+        }
+        updates, removed = [], []
+        for face, number in pairs:
+            track = tracker.tracks[number]
             key = screen.participant_key(number)
+            screen_id = screen.screen_participant_id(key)
+            student = students.get(track['student_id'])
             pred = SmoothingEngine.smooth(
-                session=session, student=None, participant=key,
+                session=session, student=student, participant='' if student else key,
                 current_raw_emotion=face['emotion'],
                 current_raw_attention=face['attention'],
                 current_confidence=face['confidence'],
             )
-            updates.append({
-                "student_id": screen.screen_participant_id(key),
-                "name": screen.screen_participant_name(key),
-                "source": "screen",
+            reading = {
+                "screen_id": screen_id,
                 "emotion": pred.smoothed_emotion,
                 "raw_emotion": face['emotion'],
                 "attention": round(pred.smoothed_attention, 2),
                 "confidence": face['confidence'],
+            }
+            if student:
+                if track['shown_anonymous']:
+                    removed.append(screen_id)  # the "Screen face N" tile becomes the student's own tile
+                    track['shown_anonymous'] = False
+                updates.append({
+                    **reading,
+                    "student_id": student.id,
+                    "name": display_name(student),
+                    "source": "student",
+                    "via": "screen",
+                    "match": 'manual' if track['manual'] else 'auto',
+                })
+            else:
+                track['shown_anonymous'] = True
+                updates.append({
+                    **reading,
+                    "student_id": screen_id,
+                    "name": tracker.display_name(number),
+                    "source": "screen",
+                    "via": "screen",
+                    "match": 'manual' if track['name'] else None,
+                })
+        return updates, removed
+
+    async def label_screen_face(self, data):
+        """
+        The instructor names a screen face: `student_id` (an enrolled student), `name` (anyone
+        else, kept for this session) or neither (not this student / back to anonymous).
+        """
+        async def reply(ok, message):
+            await self.send(text_data=json.dumps({"type": "screen.label", "ok": ok, "message": message}))
+
+        try:
+            number = -int(data.get('screen_id'))
+        except (TypeError, ValueError):
+            return
+        tracker = screen.get_tracker(self.session_id)
+        track = tracker.tracks.get(number)
+        if number <= 0 or track is None:
+            await reply(False, "That face is no longer on the shared screen.")
+            return
+
+        name = str(data.get('name') or '').strip()[:40]
+        if data.get('student_id') is not None:
+            student = await self.enrolled_student(data.get('student_id'))
+            if student is None:
+                await reply(False, "That student is not enrolled in this course.")
+                return
+            tracker.set_student(number, student.id, manual=True, score=1.0)
+            # Remember the face (for consenting students) so it is recognised automatically next time
+            if track['embedding'] is not None and student.consent_given and identity.enabled():
+                await database_sync_to_async(identity.add_reference)(student, track['embedding'], 'instructor')
+                identity.invalidate(self.session_id)
+            message = f"Named {display_name(student)}."
+        elif name:
+            tracker.set_name(number, name)
+            message = f"Named {name}."
+        else:
+            tracker.clear(number)
+            message = "Name removed."
+
+        if track['student_id'] is not None and track['shown_anonymous']:
+            track['shown_anonymous'] = False
+            await self.channel_layer.group_send(self.group_name, {
+                "type": "broadcast_participant_removed", "student_id": -number,
             })
-        return updates
+        await reply(True, message)
+
+    @database_sync_to_async
+    def enrolled_student(self, student_id):
+        try:
+            student_id = int(student_id)
+        except (TypeError, ValueError):
+            return None
+        enrollment = (
+            ClassSession.objects.get(id=self.session_id).course.enrollments
+            .filter(student_id=student_id).select_related('student').first()
+        )
+        return enrollment.student if enrollment else None
 
     @database_sync_to_async
     def get_initial_session_data(self):
@@ -414,7 +602,8 @@ class InstructorConsumer(AsyncWebsocketConsumer):
         connected = realtime.connected_students(self.session_id)
 
         roster = []
-        for enrollment in session.course.enrollments.select_related('student').order_by('student_id'):
+        # The students this session is for (its sections, or the whole class)
+        for enrollment in session.attendee_enrollments().order_by('student_id'):
             student = enrollment.student
             pred = latest.get(student.id)
             roster.append({
@@ -422,6 +611,7 @@ class InstructorConsumer(AsyncWebsocketConsumer):
                 "name": display_name(student),
                 "avatar_url": student.avatar_url,
                 "source": "student",
+                "section": {"id": enrollment.section_id, "name": enrollment.section.name} if enrollment.section else None,
                 "emotion": pred.smoothed_emotion if pred else 'neutral',
                 "smoothed_emotion": pred.smoothed_emotion if pred else 'neutral',
                 "attention": round(pred.smoothed_attention, 2) if pred else 0.0,
@@ -431,11 +621,15 @@ class InstructorConsumer(AsyncWebsocketConsumer):
                 "has_data": bool(pred),
             })
 
+        tracker = screen.get_tracker(self.session_id)
         for key, pred in sorted(AggregationService.latest_screen_predictions(
                 session, PRESENCE_WINDOW_SECONDS).items(), key=lambda item: screen.participant_number(item[0])):
+            track = tracker.tracks.get(screen.participant_number(key))
+            if track and track['student_id'] is not None:
+                continue  # now shown on the recognised student's own tile
             roster.append({
                 "id": screen.screen_participant_id(key),
-                "name": screen.screen_participant_name(key),
+                "name": tracker.display_name(screen.participant_number(key)),
                 "avatar_url": '',
                 "source": "screen",
                 "emotion": pred.smoothed_emotion,
@@ -488,6 +682,9 @@ class InstructorConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_student_preview(self, event):
         await self.send(text_data=json.dumps({"type": "student.preview", "data": event["preview"]}))
+
+    async def broadcast_participant_removed(self, event):
+        await self.send(text_data=json.dumps({"type": "participant.removed", "data": {"student_id": event["student_id"]}}))
 
     async def broadcast_model_status(self, event):
         await self.send(text_data=json.dumps({"type": "model.status", "data": event["status"]}))

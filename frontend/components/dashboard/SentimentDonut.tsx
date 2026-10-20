@@ -2,11 +2,11 @@
 
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { EMOTIONS, EMOTION_META } from '@/lib/emotions';
 
 export function SentimentDonut() {
-  const { snapshot } = useDashboardStore();
+  const { snapshot } = useSectionView();
 
   const data = EMOTIONS.map((emotion) => ({
     name: EMOTION_META[emotion].label,

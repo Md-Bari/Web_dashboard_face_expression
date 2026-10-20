@@ -17,26 +17,28 @@ export function ReportsView() {
 
   const sessionId = session?.id;
   const sessionStatus = session?.status;
+  const sectionFilter = useDashboardStore((s) => s.sectionFilter);
+  const section = typeof sectionFilter === 'number' ? sectionFilter : null;
 
   const load = useCallback(async () => {
     if (sessionId === undefined) return;
     setLoading(true);
     setError(null);
     try {
-      setReport(await api.report(sessionId));
+      setReport(await api.report(sessionId, section));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the report');
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, section]);
 
   // Load when the tab opens and whenever the session is started/ended
   useEffect(() => {
     if (sessionId === undefined) return;
     let cancelled = false;
     api
-      .report(sessionId)
+      .report(sessionId, section)
       .then((data) => {
         if (!cancelled) {
           setReport(data);
@@ -49,7 +51,7 @@ export function ReportsView() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, sessionStatus]);
+  }, [sessionId, sessionStatus, section]);
 
 
   const topEmotion = report
@@ -72,7 +74,7 @@ export function ReportsView() {
             </button>
             {session && (
               <a
-                href={api.reportCsvUrl(session.id)}
+                href={api.reportCsvUrl(session.id, section)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
               >
                 <Download className="w-3.5 h-3.5" /> Download CSV
@@ -142,7 +144,10 @@ export function ReportsView() {
                 <tbody className="divide-y divide-slate-50">
                   {report.students.map((s) => (
                     <tr key={s.student_id}>
-                      <td className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">{s.name}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                        {s.name}
+                        {s.section && <span className="ml-1.5 text-[10px] font-semibold text-slate-400">{s.section.name}</span>}
+                      </td>
                       <td className="px-3 py-2"><AttentionBar value={s.avg_attention / 100} /></td>
                       <td className="px-3 py-2 whitespace-nowrap"><EmotionPill emotion={s.dominant_emotion} /></td>
                       <td className="px-3 py-2 font-mono text-slate-600">{s.avg_confidence}%</td>

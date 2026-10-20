@@ -3,6 +3,7 @@
 import React from 'react';
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { formatClock } from '@/lib/format';
 import { SentimentDonut } from '@/components/dashboard/SentimentDonut';
 import { Avatar } from '@/components/dashboard/Avatar';
@@ -21,7 +22,8 @@ const HINTS: Record<EmotionType, string> = {
 const plural = (n: number) => `${n} student${n === 1 ? '' : 's'}`;
 
 export function SentimentView() {
-  const { snapshot, trend, students } = useDashboardStore();
+  const trend = useDashboardStore((s) => s.trend);
+  const { snapshot, students, active } = useSectionView();
   const data = trend.map((p) => ({ ...p, time: formatClock(p.timestamp) }));
 
   return (
@@ -49,7 +51,11 @@ export function SentimentView() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <Card title="Expression Trend" subtitle="Share of students per expression, every aggregation cycle" className="xl:col-span-8">
+        <Card
+          title="Expression Trend"
+          subtitle={`Share of students per expression, every aggregation cycle${active ? ' · all sections (history is kept for the whole class)' : ''}`}
+          className="xl:col-span-8"
+        >
           <div className="h-[280px]">
             {data.length < 2 ? (
               <p className="h-full flex items-center justify-center text-xs text-slate-400">Collecting data…</p>

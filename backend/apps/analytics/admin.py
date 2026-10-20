@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ExpressionSnapshot, Prediction, SessionSnapshot, TeachingSuggestion
+from .models import ExpressionSnapshot, FaceReference, Prediction, SessionSnapshot, TeachingSuggestion
 
 
 @admin.register(Prediction)
@@ -26,3 +26,11 @@ class ExpressionSnapshotAdmin(admin.ModelAdmin):
     list_display = ('student', 'session', 'emotion', 'confidence', 'image', 'created_at')
     list_filter = ('session', 'emotion')
     search_fields = ('student__username', 'student__first_name', 'student__last_name')
+
+
+@admin.register(FaceReference)
+class FaceReferenceAdmin(admin.ModelAdmin):
+    list_display = ('student', 'source', 'created_at')
+    list_filter = ('source',)
+    search_fields = ('student__username', 'student__first_name', 'student__last_name')
+    exclude = ('embedding',)  # 128 numbers, meaningless to read

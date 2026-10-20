@@ -33,9 +33,23 @@ export interface ScreenState {
   faces: ScreenFace[];
   latencyMs: number;
   message: string | null;
+  /** False when the server has no face recogniser: faces stay anonymous unless named by hand */
+  recognition: boolean;
+  /** Outcome of the last "name this face" request */
+  labelResult: { ok: boolean; message: string; at: number } | null;
 }
 
-const SCREEN_IDLE: ScreenState = { sharing: false, source: null, faces: [], latencyMs: 0, message: null };
+const SCREEN_IDLE: ScreenState = {
+  sharing: false,
+  source: null,
+  faces: [],
+  latencyMs: 0,
+  message: null,
+  recognition: true,
+  labelResult: null,
+};
+export type SectionFilter = number | 'all' | 'none';
+
 const SCREEN_FACE_FORGET_MS = 60_000; // drop screen faces not seen for a minute (layout changes renumber them)
 
 interface DashboardStore {
@@ -52,11 +66,17 @@ interface DashboardStore {
   filter: 'all' | EmotionType;
   viewMode: 'grid' | 'list';
   screen: ScreenState;
+  /** Section filter for the student views: a section id, 'none' (no section) or 'all' */
+  sectionFilter: SectionFilter;
+  /** Bumped after classes/sections/sessions change, so lists reload */
+  catalogVersion: number;
 
   setUser: (user: AuthUser | null) => void;
   setSession: (session: SessionInfo | null) => void;
   setFilter: (filter: 'all' | EmotionType) => void;
   setViewMode: (mode: 'grid' | 'list') => void;
+  setSectionFilter: (filter: SectionFilter) => void;
+  bumpCatalog: () => void;
   setConnection: (connection: Connection) => void;
   applyInit: (init: {
     session?: SessionInfo;
@@ -77,6 +97,7 @@ interface DashboardStore {
   setScreen: (patch: Partial<ScreenState>) => void;
   applyThumbnails: (thumbs: Record<number, string>) => void;
   applyPreview: (preview: { student_id: number; image: string }) => void;
+  removeStudent: (id: number) => void;
   reset: () => void;
 }
 
@@ -105,11 +126,15 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
   filter: 'all',
   viewMode: 'grid',
   screen: SCREEN_IDLE,
+  sectionFilter: 'all',
+  catalogVersion: 0,
 
   setUser: (user) => set({ user }),
   setSession: (session) => set({ session }),
   setFilter: (filter) => set({ filter }),
   setViewMode: (viewMode) => set({ viewMode }),
+  setSectionFilter: (sectionFilter) => set({ sectionFilter }),
+  bumpCatalog: () => set((state) => ({ catalogVersion: state.catalogVersion + 1 })),
 
   // Once the socket is open the server's init / model.status messages report the real model state
   setConnection: (connection) =>
@@ -172,18 +197,34 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     if (update.emotion && update.emotion !== existing.emotion) {
       logActivity('emotion', `${existing.name} is now ${update.emotion} (${Math.round((update.attention ?? 0) * 100)}% attention)`);
     }
-    set({ students: students.map((s) => (s.id === student_id ? { ...s, ...patch } : s)) });
+    // A webcam reading carries no screen fields: clear them so the tile no longer offers screen naming
+    const screenFields = update.via === 'screen' ? {} : { via: undefined, screen_id: undefined, match: undefined };
+    set({
+      students: students.map((s) =>
+        // Screen faces can be renamed by the instructor; take the latest name
+        s.id === student_id ? { ...s, ...screenFields, ...patch, name: name || s.name } : s
+      ),
+    });
   },
 
   applyPresence: ({ student_id, online }) => {
     const student = get().students.find((s) => s.id === student_id);
-    if (!student || student.online === online) return;
+    if (!student) return;
+    const changed = student.online !== online;
     set({
       students: get().students.map((s) =>
-        s.id === student_id ? { ...s, online, live_thumb: online ? s.live_thumb : undefined } : s
+        s.id === student_id
+          ? {
+              ...s,
+              online,
+              // Joining or a heartbeat is a sign of life even without camera readings
+              last_update: online ? Date.now() : s.last_update,
+              live_thumb: online ? s.live_thumb : undefined,
+            }
+          : s
       ),
     });
-    get().logActivity('presence', `${student.name} ${online ? 'joined' : 'left'} the session`);
+    if (changed) get().logActivity('presence', `${student.name} ${online ? 'joined' : 'left'} the session`);
   },
 
   applySnapshot: (snapshot) =>
@@ -242,11 +283,14 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       ),
     })),
 
-  // Live crops of screen faces, made in this browser only (never uploaded or stored)
+  // Live crops of the faces on the shared screen (cut by the server from the analysed frame; memory only)
   applyThumbnails: (thumbs) =>
     set((state) => ({
-      students: state.students.map((s) => (thumbs[s.id] ? { ...s, avatar_url: thumbs[s.id] } : s)),
+      students: state.students.map((s) => (thumbs[s.id] ? { ...s, live_thumb: thumbs[s.id] } : s)),
     })),
+
+  // A screen face that turned out to be an enrolled student now updates that student's own tile
+  removeStudent: (id) => set((state) => ({ students: state.students.filter((s) => s.id !== id) })),
 
   reset: () =>
     set({
@@ -258,5 +302,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       suggestions: [],
       activity: [],
       screen: SCREEN_IDLE,
+      sectionFilter: 'all',
+      modelStatus: { status: 'Connecting', model_name: '—', latency_ms: 0 },
     }),
 }));

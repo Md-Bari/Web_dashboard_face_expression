@@ -1,23 +1,105 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import Course, Enrollment, ClassSession
+from .models import Course, Enrollment, ClassSession, Section
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import get_password_validators, validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.accounts.serializers import UserSerializer
 
 
-class CourseSerializer(serializers.ModelSerializer):
-    instructor = UserSerializer(read_only=True)
+class SectionSerializer(serializers.ModelSerializer):
+    course_id = serializers.PrimaryKeyRelatedField(source='course', queryset=Course.objects.all(), write_only=True)
     total_students = serializers.SerializerMethodField()
 
     class Meta:
+        model = Section
+        fields = ['id', 'course_id', 'name', 'join_code', 'total_students', 'created_at']
+        read_only_fields = ['join_code', 'created_at']
+
+    def get_total_students(self, obj):
+        return obj.enrollments.count()
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Give the section a name, e.g. "A".')
+        return value
+
+    def validate_course_id(self, course):
+        user = self.context['request'].user
+        if self.instance is not None and course.id != self.instance.course_id:
+            raise serializers.ValidationError('A section cannot move to another class.')
+        if not user.is_admin and course.instructor_id != user.id:
+            raise serializers.ValidationError('You can only add sections to your own classes.')
+        return course
+
+    def validate(self, attrs):
+        course = attrs.get('course') or self.instance.course
+        name = attrs.get('name', self.instance.name if self.instance else None)
+        clash = Section.objects.filter(course=course, name__iexact=name)
+        if self.instance is not None:
+            clash = clash.exclude(id=self.instance.id)
+        if clash.exists():
+            raise serializers.ValidationError({'name': f'This class already has a section "{name}".'})
+        return attrs
+
+
+class SectionBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Section
+        fields = ['id', 'name']
+
+
+class CourseSerializer(serializers.ModelSerializer):
+    instructor = UserSerializer(read_only=True)
+    total_students = serializers.SerializerMethodField()
+    unassigned_students = serializers.SerializerMethodField()
+    sections = serializers.SerializerMethodField()
+
+    class Meta:
         model = Course
-        fields = ['id', 'title', 'code', 'join_code', 'description', 'instructor', 'total_students', 'created_at']
+        fields = ['id', 'title', 'code', 'join_code', 'description', 'instructor', 'total_students',
+                  'unassigned_students', 'sections', 'created_at']
         read_only_fields = ['join_code']
 
     def get_total_students(self, obj):
         return obj.enrollments.count()
+
+    def get_unassigned_students(self, obj):
+        return obj.enrollments.filter(section__isnull=True).count()
+
+    def get_sections(self, obj):
+        return [
+            {'id': s.id, 'name': s.name, 'join_code': s.join_code, 'total_students': s.enrollments.count()}
+            for s in obj.sections.all()
+        ]
+
+
+class CourseBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Course
+        fields = ['id', 'code', 'title']
+
+
+class EnrollmentSerializer(serializers.ModelSerializer):
+    student = UserSerializer(read_only=True)
+    course = CourseBriefSerializer(read_only=True)
+    section = SectionBriefSerializer(read_only=True)
+    section_id = serializers.PrimaryKeyRelatedField(
+        source='section', queryset=Section.objects.all(), write_only=True, allow_null=True, required=False,
+    )
+
+    class Meta:
+        model = Enrollment
+        fields = ['id', 'student', 'course', 'section', 'section_id', 'enrolled_at']
+        read_only_fields = ['enrolled_at']
+
+    def validate_section_id(self, section):
+        if section is None:
+            raise serializers.ValidationError('Every student must be in a section.')
+        if self.instance is not None and section.course_id != self.instance.course_id:
+            raise serializers.ValidationError('That section belongs to another class.')
+        return section
 
 
 class ClassSessionSerializer(serializers.ModelSerializer):
@@ -26,7 +108,11 @@ class ClassSessionSerializer(serializers.ModelSerializer):
     session_code = serializers.CharField(
         max_length=50, required=False, validators=[UniqueValidator(queryset=ClassSession.objects.all())],
     )
-    enrolled_students = serializers.SerializerMethodField()
+    sections = SectionBriefSerializer(many=True, read_only=True)
+    section_ids = serializers.PrimaryKeyRelatedField(
+        source='sections', queryset=Section.objects.all(), many=True, write_only=True, required=False,
+    )
+    attendee_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ClassSession
@@ -36,19 +122,34 @@ class ClassSessionSerializer(serializers.ModelSerializer):
             'course_id',
             'title',
             'session_code',
+            'join_code',
+            'sections',
+            'section_ids',
             'status',
+            'scheduled_for',
             'started_at',
             'ended_at',
             'created_at',
-            'enrolled_students',
+            'attendee_count',
         ]
-        read_only_fields = ['status', 'started_at', 'ended_at', 'created_at']
+        read_only_fields = ['join_code', 'status', 'started_at', 'ended_at', 'created_at']
 
     def validate_course_id(self, course):
         user = self.context['request'].user
         if not user.is_admin and course.instructor_id != user.id:
             raise serializers.ValidationError("You can only create sessions for your own courses.")
+        if self.instance is not None and course.id != self.instance.course_id:
+            raise serializers.ValidationError("A session cannot move to another class.")
         return course
+
+    def validate(self, attrs):
+        course = attrs.get('course') or (self.instance.course if self.instance else None)
+        for section in attrs.get('sections', []):
+            if course is not None and section.course_id != course.id:
+                raise serializers.ValidationError({'section_ids': f'Section "{section.name}" is not in this class.'})
+        if self.instance is not None and self.instance.status == 'ENDED':
+            raise serializers.ValidationError('An ended session cannot be changed.')
+        return attrs
 
     def create(self, validated_data):
         if not validated_data.get('session_code'):
@@ -61,10 +162,8 @@ class ClassSessionSerializer(serializers.ModelSerializer):
             validated_data['session_code'] = code
         return super().create(validated_data)
 
-    def get_enrolled_students(self, obj):
-        students = [e.student for e in obj.course.enrollments.select_related('student').all()]
-        return UserSerializer(students, many=True).data
-
+    def get_attendee_count(self, obj):
+        return obj.attendee_enrollments().count()
 
 
 # Public self sign-up gets Django's standard checks even if the site-wide setting is looser

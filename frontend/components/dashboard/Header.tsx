@@ -69,12 +69,12 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         </div>
 
         {/* Current Session Card */}
-        <div className="min-w-0 flex-1 md:flex-none px-3 md:px-4 py-1.5 md:py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col justify-center shadow-xs">
+        <div className="min-w-0 flex-1 md:flex-none md:max-w-[280px] px-3 md:px-4 py-1.5 md:py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col justify-center shadow-xs">
           <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
             Current Session
           </span>
           <div className="flex items-center gap-2 mt-0.5 min-w-0">
-            <span className="text-sm font-semibold text-slate-800 truncate">
+            <span className="text-sm font-semibold text-slate-800 truncate" title={session?.title}>
               {session?.title ?? 'Loading session…'}
             </span>
             {session &&

@@ -1,5 +1,36 @@
 import { apiBase } from './config';
-import type { AuthUser, CourseInfo, ExpressionPhotoRow, JoinInfo, ReportData, SessionInfo, SessionSnapshotData, TeachingSuggestionData } from './types';
+import type {
+  AuthUser,
+  CourseInfo,
+  EnrollmentRow,
+  ExpressionPhotoRow,
+  ImportResult,
+  JoinInfo,
+  MeetInfo,
+  MeetingPass,
+  ReportData,
+  SectionInfo,
+  SessionInfo,
+  SessionSnapshotData,
+  TeachingSuggestionData,
+} from './types';
+
+const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
+const patch = (body: unknown): RequestInit => ({ method: 'PATCH', body: JSON.stringify(body) });
+const query = (params: Record<string, string | number | null | undefined>) => {
+  const q = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .join('&');
+  return q ? `?${q}` : '';
+};
+
+export interface SessionInput {
+  course_id?: number;
+  title?: string;
+  section_ids?: number[];
+  scheduled_for?: string | null;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -58,6 +89,49 @@ export const api = {
     request<SessionInfo & { session_code: string; course: CourseInfo }>('/api/sessions/current/'),
   session: (id: number) => request<SessionInfo & { course: CourseInfo }>(`/api/sessions/${id}/`),
   courses: () => request<CourseInfo[]>('/api/courses/'),
+  course: (id: number) => request<CourseInfo>(`/api/courses/${id}/`),
+  updateCourse: (id: number, data: { title?: string; code?: string }) =>
+    request<CourseInfo>(`/api/courses/${id}/`, patch(data)),
+  deleteCourse: (id: number) => request<null>(`/api/courses/${id}/`, { method: 'DELETE' }),
+
+  // Sections of a class
+  createSection: (courseId: number, name: string) =>
+    request<SectionInfo>('/api/sections/', json({ course_id: courseId, name })),
+  renameSection: (id: number, name: string) => request<SectionInfo>(`/api/sections/${id}/`, patch({ name })),
+  deleteSection: (id: number) => request<null>(`/api/sections/${id}/`, { method: 'DELETE' }),
+
+  // Students of a class, or of all your classes without courseId (section: an id, 'none' for unassigned, or empty for all)
+  enrollments: (courseId?: number | null, section?: number | 'none' | null) =>
+    request<EnrollmentRow[]>(`/api/enrollments/${query({ course: courseId, section })}`),
+  addStudent: (courseId: number, identifier: string, sectionId: number) =>
+    request<EnrollmentRow>('/api/enrollments/', json({ course_id: courseId, identifier, section_id: sectionId })),
+  moveStudent: (enrollmentId: number, sectionId: number) =>
+    request<EnrollmentRow>(`/api/enrollments/${enrollmentId}/`, patch({ section_id: sectionId })),
+  removeStudent: (enrollmentId: number) => request<null>(`/api/enrollments/${enrollmentId}/`, { method: 'DELETE' }),
+  importStudents: (courseId: number, csv: string, sectionId: number) =>
+    request<ImportResult>('/api/enrollments/import/', json({ course_id: courseId, csv, section_id: sectionId })),
+
+  // Sessions
+  sessions: (filters: { course?: number | null; status?: SessionInfo['status'] } = {}) =>
+    request<SessionInfo[]>(`/api/sessions/${query(filters)}`),
+  scheduleSession: (data: SessionInput) => request<SessionInfo>('/api/sessions/', json(data)),
+  updateSession: (id: number, data: SessionInput) => request<SessionInfo>(`/api/sessions/${id}/`, patch(data)),
+  deleteSession: (id: number) => request<null>(`/api/sessions/${id}/`, { method: 'DELETE' }),
+
+  // Video meeting of a session
+  meetingPass: (sessionId: number, consent = false) =>
+    request<MeetingPass>(`/api/sessions/${sessionId}/meeting/`, json(consent ? { consent: true } : {})),
+  moderate: (sessionId: number, action: 'remove' | 'mute', identity: string, trackSid?: string) =>
+    request<{ ok: boolean }>(`/api/sessions/${sessionId}/moderate/`, json({ action, identity, track_sid: trackSid })),
+  meetInfo: (code: string) => request<MeetInfo>(`/api/meet/${encodeURIComponent(code)}/`),
+  meetEnroll: (code: string) =>
+    request<{ allowed: boolean; session_id: number }>(`/api/meet/${encodeURIComponent(code)}/enroll/`, json({})),
+  meetRegister: (
+    code: string,
+    data: { first_name: string; last_name?: string; username: string; email?: string; password: string }
+  ) => request<{ user: AuthUser; session_id: number }>(`/api/meet/${encodeURIComponent(code)}/register/`, json(data)),
+  setConsent: (consent: boolean) =>
+    request<{ consent_given: boolean }>('/api/auth/consent/', json({ consent })),
 
   joinInfo: (code: string) => request<JoinInfo>(`/api/join/${encodeURIComponent(code)}/`),
   joinEnroll: (code: string) =>
@@ -88,8 +162,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ suggestion_id: suggestionId }),
     }),
-  report: (id: number) => request<ReportData>(`/api/analytics/sessions/${id}/report/`),
-  reportCsvUrl: (id: number) => `${apiBase()}/api/analytics/sessions/${id}/report.csv`,
+  report: (id: number, section?: number | null) =>
+    request<ReportData>(`/api/analytics/sessions/${id}/report/${query({ section })}`),
+  reportCsvUrl: (id: number, section?: number | null) =>
+    `${apiBase()}/api/analytics/sessions/${id}/report.csv${query({ section })}`,
   expressionPhotos: (id: number) =>
     request<{ students: ExpressionPhotoRow[] }>(`/api/analytics/sessions/${id}/expression-snapshots/`),
   /** Absolute URL for an API path (photos are fetched with the auth cookie) */

@@ -12,5 +12,9 @@ app.conf.beat_schedule = {
         'task': 'apps.analytics.tasks.aggregate_active_sessions',
         'schedule': 3.0,
     },
+    'end-forgotten-sessions-every-minute': {
+        'task': 'apps.courses.tasks.end_forgotten_sessions',
+        'schedule': 60.0,
+    },
 }
 

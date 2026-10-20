@@ -9,13 +9,13 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { useDashboardStore } from '@/lib/store';
+import { useSectionView } from '@/lib/sections';
 import { Eye, X } from 'lucide-react';
 import { formatClock } from '@/lib/format';
 import { Avatar } from './Avatar';
 
 export function ConcentrationOverview() {
-  const { snapshot, students } = useDashboardStore();
+  const { snapshot, students, active } = useSectionView();
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
 
   // Server timeline points carry ISO timestamps; label them in the local time zone
@@ -37,6 +37,7 @@ export function ConcentrationOverview() {
         <h3 className="text-sm font-bold text-slate-900">
           Concentration Overview <span className="text-xs font-normal text-slate-500">(Eye Tracking)</span>
         </h3>
+        {active && <span className="text-[10px] text-slate-400">Trend: all sections</span>}
       </div>
 
       <div className="flex flex-col sm:flex-row items-center gap-4">

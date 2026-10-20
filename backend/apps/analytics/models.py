@@ -42,6 +42,42 @@ class Prediction(models.Model):
         return f"{who} - {self.smoothed_emotion} ({self.smoothed_attention:.2f})"
 
 
+class ParticipantStat(models.Model):
+    """
+    Running totals of one student (or one screen participant) in one session, updated with
+    every prediction. Predictions are pruned after a while; these totals are what the
+    session report shows, so per-student results are kept for good.
+    """
+    session = models.ForeignKey(ClassSession, on_delete=models.CASCADE, related_name='participant_stats')
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='session_stats', null=True, blank=True,
+    )
+    participant = models.CharField(max_length=32, blank=True, default='')
+    emotion_counts = models.JSONField(default=empty_counts)   # smoothed expression -> number of readings
+    attention_total = models.FloatField(default=0.0)
+    confidence_total = models.FloatField(default=0.0)
+    samples = models.IntegerField(default=0)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['session', 'student'], condition=models.Q(student__isnull=False),
+                                    name='one_stat_per_session_student'),
+            models.UniqueConstraint(fields=['session', 'participant'], condition=models.Q(student__isnull=True),
+                                    name='one_stat_per_session_participant'),
+        ]
+
+    @property
+    def dominant_emotion(self):
+        counts = self.emotion_counts or {}
+        return max(counts, key=counts.get) if any(counts.values()) else 'neutral'
+
+    def __str__(self):
+        who = self.student.username if self.student_id else self.participant
+        return f"{who} in session {self.session_id}: {self.samples} readings"
+
+
 class SessionSnapshot(models.Model):
     """
     Periodic class-wide aggregation of all active students in the session.
@@ -113,3 +149,27 @@ class ExpressionSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.student.username} - {self.emotion} (session {self.session_id})"
+
+
+class FaceReference(models.Model):
+    """
+    A face template of a consenting student: 128 numbers from the SFace recogniser (not an
+    image), used to put the student's name on their face in the instructor's shared screen.
+    Collected from the student's own webcam frames or when the instructor names a screen face;
+    withdrawing consent deletes them.
+    """
+    SOURCE_CHOICES = (
+        ('webcam', 'Student webcam'),
+        ('instructor', 'Named by the instructor'),
+    )
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='face_references')
+    embedding = models.JSONField()  # list of 128 floats, unit length
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='webcam')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['student', '-created_at']
+
+    def __str__(self):
+        return f"{self.student.username} face template ({self.source})"

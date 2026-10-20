@@ -18,14 +18,15 @@ import {
   Square,
   GraduationCap,
   Loader2,
-  X,
-} from 'lucide-react';
+  X, School, CalendarDays } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { api } from '@/lib/api';
 import { useLogout } from '@/lib/useLogout';
 
 export const NAV_ITEMS = [
   { name: 'Dashboard', icon: LayoutDashboard },
+  { name: 'Classes', icon: School },
+  { name: 'Sessions', icon: CalendarDays },
   { name: 'Live Monitoring', icon: Video },
   { name: 'Students', icon: Users },
   { name: 'Expression Photos', icon: Images },

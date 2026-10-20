@@ -11,6 +11,7 @@ DEFAULT_METADATA = {
     'output': 'probabilities',
     'face_detector': 'face_detection_yunet_2023mar.onnx',
     'face_margin': 0.2,
+    'face_recognizer': 'face_recognition_sface_2021dec.onnx',
 }
 
 FACE_SCORE_THRESHOLD = 0.6
@@ -26,6 +27,9 @@ class EmotionModel:
       3. The ONNX expression ensemble returns probabilities for the six classes
          (angry, fear, happy, neutral, sad, surprise); the top class is the prediction.
 
+    Optional: SFace (OpenCV FaceRecognizerSF, `face_recognizer`) turns an aligned face into a
+    128-number identity embedding, used to recognise students in a shared screen.
+
     Nothing is predicted when a model file is missing or no face is found.
     """
 
@@ -35,10 +39,12 @@ class EmotionModel:
         self.models_dir = models_dir
         self.session = None
         self.detector = None
+        self.recognizer = None
         self.model_name = "No model loaded"
         self.input_name = None
         self.metadata = dict(DEFAULT_METADATA)
         self._detector_lock = threading.Lock()  # cv2.FaceDetectorYN is not thread-safe
+        self._recognizer_lock = threading.Lock()  # neither is cv2.FaceRecognizerSF
         self.load_model()
 
     def _read_metadata(self):
@@ -55,14 +61,16 @@ class EmotionModel:
     def load_model(self):
         self.session = None
         self.detector = None
+        self.recognizer = None
         self.model_name = "No model loaded"
         self.metadata = self._read_metadata()
 
         detector_file = self.metadata['face_detector']
         detector_path = os.path.join(self.models_dir, detector_file)
+        recognizer_file = self.metadata['face_recognizer']
         classifier_files = sorted(
             f for f in glob.glob(os.path.join(self.models_dir, '*.onnx'))
-            if os.path.basename(f) != detector_file
+            if os.path.basename(f) not in (detector_file, recognizer_file)
         )
         if not classifier_files:
             print("[Inference] No expression .onnx model in models/. Emotion predictions are disabled.")
@@ -91,20 +99,36 @@ class EmotionModel:
         except Exception as e:
             self.detector = None
             print(f"[Inference] Failed to load models from {self.models_dir}: {e}")
+            return
 
-    def detect_faces(self, frame_bgr, max_faces=1, min_size=0):
-        """Faces as (x, y, w, h, landmarks[5x2]), largest first."""
+        recognizer_path = os.path.join(self.models_dir, recognizer_file)
+        if os.path.exists(recognizer_path):
+            try:
+                import cv2
+                self.recognizer = cv2.FaceRecognizerSF.create(recognizer_path, "")
+                print(f"[Inference] Face recognition enabled ({recognizer_file})")
+            except Exception as e:
+                print(f"[Inference] Could not load face recogniser {recognizer_file}: {e}")
+        else:
+            print(f"[Inference] {recognizer_file} not in models/. Screen faces will not be recognised by name.")
+
+    def detect_faces(self, frame_bgr, max_faces=1, min_size=0, min_score=0.0, plausible_only=False):
+        """Faces as (x, y, w, h, landmarks[5x2], score), largest first."""
         h, w = frame_bgr.shape[:2]
         with self._detector_lock:
             self.detector.setInputSize((w, h))
             _, faces = self.detector.detect(frame_bgr)
         if faces is None or len(faces) == 0:
             return []
-        faces = sorted((f for f in faces if min(f[2], f[3]) >= min_size), key=lambda f: f[2] * f[3], reverse=True)
-        return [
-            (float(f[0]), float(f[1]), float(f[2]), float(f[3]), f[4:14].reshape(5, 2).astype(np.float32))
-            for f in faces[:max_faces]
+        found = [
+            (float(f[0]), float(f[1]), float(f[2]), float(f[3]), f[4:14].reshape(5, 2).astype(np.float32), float(f[14]))
+            for f in faces
+            if min(f[2], f[3]) >= min_size and f[14] >= min_score
         ]
+        if plausible_only:
+            found = [f for f in found if plausible_face(f)]
+        found.sort(key=lambda f: f[2] * f[3], reverse=True)
+        return found[:max_faces]
 
     def face_crop(self, frame_bgr, box):
         """The face exactly as the classifier sees it: margin, short side -> image_size, centre crop (BGR uint8)."""
@@ -158,9 +182,10 @@ class EmotionModel:
             'scores': {c: float(p) for c, p in zip(classes, probs)},
             'box': face[:4],
             'landmarks': face[4],
+            'detection': face,
         }
 
-    def predict_faces(self, frame_bgr, max_faces=1, min_size=0):
+    def predict_faces(self, frame_bgr, max_faces=1, min_size=0, min_score=0.0, plausible_only=False):
         """
         Takes a BGR frame. Returns one dict per detected face (largest first) with the top
         expression class ('angry' | 'fear' | 'happy' | 'neutral' | 'sad' | 'surprise'), its
@@ -172,7 +197,8 @@ class EmotionModel:
             return []
         try:
             faces, tensors = [], []
-            for face in self.detect_faces(frame_bgr, max_faces=max_faces, min_size=min_size):
+            for face in self.detect_faces(frame_bgr, max_faces=max_faces, min_size=min_size,
+                                          min_score=min_score, plausible_only=plausible_only):
                 tensor = self._preprocess(frame_bgr, face[:4])
                 if tensor is not None:
                     faces.append(face)
@@ -189,3 +215,64 @@ class EmotionModel:
         """The largest face in the frame (a student's own webcam), or None."""
         results = self.predict_faces(frame_bgr, max_faces=1)
         return results[0] if results else None
+
+    # ------------------------------------------------------------------ identity
+
+    @property
+    def can_recognise(self):
+        return self.recognizer is not None
+
+    def embed(self, frame_bgr, detection):
+        """Unit-length identity embedding of one detected face (see detect_faces), or None."""
+        if self.recognizer is None or detection is None:
+            return None
+        x, y, w, h, landmarks, score = detection
+        row = np.array([[x, y, w, h, *landmarks.reshape(-1), score]], dtype=np.float32)
+        try:
+            with self._recognizer_lock:
+                aligned = self.recognizer.alignCrop(frame_bgr, row)
+                feature = self.recognizer.feature(aligned).reshape(-1).astype(np.float32)
+        except Exception as ex:
+            print(f"[Inference] Face embedding error: {ex}")
+            return None
+        norm = float(np.linalg.norm(feature))
+        return feature / norm if norm > 0 else None
+
+    def embed_largest(self, frame_bgr, min_score=0.8):
+        """Embedding of the largest clear face in an image (a webcam frame or a saved face crop)."""
+        if self.recognizer is None or self.detector is None:
+            return None
+        faces = self.detect_faces(frame_bgr, max_faces=1, min_score=min_score, plausible_only=True)
+        return self.embed(frame_bgr, faces[0]) if faces else None
+
+
+def plausible_face(face):
+    """
+    Rejects detections whose landmarks do not form a face. Text, logos and graphics in a
+    shared screen often fool the detector, but rarely give two level eyes above a nose above
+    a mouth at human proportions.
+    """
+    x, y, w, h, lm, _ = face
+    if not 0.55 <= w / max(h, 1e-6) <= 1.5:
+        return False
+    pad_x, pad_y = w * 0.15, h * 0.15
+    if not ((lm[:, 0] >= x - pad_x).all() and (lm[:, 0] <= x + w + pad_x).all()
+            and (lm[:, 1] >= y - pad_y).all() and (lm[:, 1] <= y + h + pad_y).all()):
+        return False
+    right_eye, left_eye, nose, mouth_r, mouth_l = lm
+    eye_vec = left_eye - right_eye
+    eye_dist = float(np.linalg.norm(eye_vec))
+    if not 0.25 * w <= eye_dist <= 0.75 * w:
+        return False
+    if eye_vec[0] <= 0 or abs(eye_vec[1]) > 0.6 * eye_vec[0]:  # eyes roughly level, in the right order
+        return False
+    down = np.array([-eye_vec[1], eye_vec[0]]) / eye_dist      # perpendicular to the eye line
+    eye_mid = (right_eye + left_eye) / 2
+    nose_drop = float((nose - eye_mid) @ down)
+    mouth_drop = float(((mouth_r + mouth_l) / 2 - eye_mid) @ down)
+    if not 0.15 * eye_dist < nose_drop < mouth_drop:
+        return False
+    if not 0.6 * eye_dist <= mouth_drop <= 1.8 * eye_dist:
+        return False
+    mouth_width = float(np.linalg.norm(mouth_l - mouth_r))
+    return 0.35 * eye_dist <= mouth_width <= 1.5 * eye_dist

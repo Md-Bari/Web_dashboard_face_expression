@@ -32,7 +32,9 @@ from gaze_tracker import GazeTracker  # noqa: E402
 
 RESCAN_SECONDS = 5
 SCREEN_MAX_FACES = 49       # a full 7x7 Meet/Zoom gallery
-SCREEN_MIN_FACE_PX = 20     # smaller faces are too blurry to classify
+SCREEN_MIN_FACE_PX = 24     # smaller faces are too blurry to classify or recognise
+SCREEN_MIN_SCORE = 0.8      # stricter than webcams: a shared screen is full of text and graphics
+SCREEN_THUMB_PX = 96        # tile thumbnail cut from the analysed frame itself
 PREVIEW_SIZE = (192, 144)   # instructor tile preview (4:3)
 PREVIEW_QUALITY = 60
 
@@ -101,6 +103,8 @@ class InferenceEngine:
             'latency_ms': self.last_latency_ms,
             # Lazily encoded: only needed the first time a student shows an expression
             'face_jpeg': lambda: self._face_jpeg(frame_bgr, prediction.get('box')),
+            # Lazily computed: a face template is only collected every so often
+            'face_embedding': lambda: self.emotion_model.embed(frame_bgr, prediction.get('detection')),
         }
 
     def _face_jpeg(self, frame_bgr, box):
@@ -129,8 +133,10 @@ class InferenceEngine:
     def analyze_screen(self, data_url):
         """
         Every face in a shared-screen frame (e.g. a Meet/Zoom gallery). Returns a list of
-        telemetry dicts with the face box as fractions of the frame, or None when there is
-        no model or the frame cannot be decoded.
+        telemetry dicts with the face box as fractions of the frame, a thumbnail of the face
+        and a lazy `embed()` for recognition, or None when there is no model or the frame
+        cannot be decoded. Detections that do not look like a real face (text, logos,
+        graphics) are dropped.
         """
         self._maybe_reload()
         if not self.custom_model_loaded:
@@ -141,6 +147,7 @@ class InferenceEngine:
         start = time.perf_counter()
         predictions = self.emotion_model.predict_faces(
             frame_bgr, max_faces=SCREEN_MAX_FACES, min_size=SCREEN_MIN_FACE_PX,
+            min_score=SCREEN_MIN_SCORE, plausible_only=True,
         )
         img_h, img_w = frame_bgr.shape[:2]
         faces = []
@@ -151,11 +158,38 @@ class InferenceEngine:
                 'emotion': p['emotion'],
                 'confidence': round(p['confidence'], 2),
                 'attention': round(float(self.gaze.estimate_attention(p['landmarks'])), 2),
+                'thumb': self._thumbnail(frame_bgr, p['box']),
+                'embed': (lambda detection=p['detection']: self.emotion_model.embed(frame_bgr, detection)),
             })
         if faces:
             self.last_latency_ms = max(1, int((time.perf_counter() - start) * 1000))
             self.frames_processed += 1
         return faces
+
+    @staticmethod
+    def _thumbnail(frame_bgr, box):
+        """Square JPEG data URL around a face, cut from the analysed frame (memory only, never stored)."""
+        x, y, w, h = box
+        img_h, img_w = frame_bgr.shape[:2]
+        side = max(w, h) * 1.4
+        cx, cy = x + w / 2, y + h / 2
+        x0, y0 = int(max(0, cx - side / 2)), int(max(0, cy - side / 2))
+        x1, y1 = int(min(img_w, cx + side / 2)), int(min(img_h, cy + side / 2))
+        crop = frame_bgr[y0:y1, x0:x1]
+        if crop.size == 0:
+            return None
+        try:
+            img = Image.fromarray(np.ascontiguousarray(crop[:, :, ::-1]))
+            img.thumbnail((SCREEN_THUMB_PX, SCREEN_THUMB_PX))
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=70)
+            return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            return None
+
+    @property
+    def can_recognise(self):
+        return self.emotion_model.can_recognise
 
     @staticmethod
     def _preview(frame_bgr):
