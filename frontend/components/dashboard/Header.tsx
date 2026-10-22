@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronDown, Clock, Loader2, LogOut, Menu, Wifi, WifiOff } from 'lucide-react';
+import { ChevronDown, Loader2, LogOut, Menu, Wifi, WifiOff } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { useLogout } from '@/lib/useLogout';
 import { Avatar } from './Avatar';
+import { NAV_GROUPS } from './Sidebar';
 
 const TICK_MS = 15_000;
 
@@ -23,99 +24,84 @@ function useNow() {
   return bucket === 0 ? null : new Date(bucket * TICK_MS);
 }
 
-export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
-  const { session, connection } = useDashboardStore();
-  const now = useNow();
+function greeting(now: Date | null) {
+  if (!now) return 'Welcome';
+  const h = now.getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
 
+export function Header({ onMenuClick, title }: { onMenuClick?: () => void; title: string }) {
+  const { session, connection, user } = useDashboardStore();
+  const greetingName = user?.display_title || user?.first_name || user?.name || 'Instructor';
+  const now = useNow();
   const isLive = session?.status === 'LIVE';
 
   return (
-    <header className="sticky top-0 z-30 lg:static flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 md:gap-4 py-3 px-4 md:py-4 md:px-6 bg-white border-b border-slate-100">
-      {/* Title & Greeting (with the menu button on phones/tablets) */}
-      <div className="flex items-center gap-3 min-w-0">
-        <button
-          onClick={onMenuClick}
-          aria-label="Open menu"
-          className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 shrink-0"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-        <div className="min-w-0">
-        <h1 className="text-lg md:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 truncate">
-          Welcome, Instructor <span className="text-xl">👋</span>
+    <header className="sticky top-0 z-30 h-14 shrink-0 flex items-center gap-3 px-4 md:px-6 bg-white/85 backdrop-blur-md border-b border-slate-200">
+      <button
+        onClick={onMenuClick}
+        aria-label="Open menu"
+        className="lg:hidden p-1.5 -ml-1.5 rounded-md text-slate-500 hover:bg-slate-100"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Page title; the dashboard greets the instructor */}
+      <div className="min-w-0 flex items-baseline gap-2.5">
+        <h1 className="flex items-baseline gap-1.5 text-[14px] truncate">
+          <span className="hidden sm:inline text-slate-400">{NAV_GROUPS.find((g) => g.items.some((i) => i === title))?.label}</span>
+          <span className="hidden sm:inline text-slate-300">/</span>
+          <span className="font-semibold text-slate-900 tracking-tight">{title}</span>
         </h1>
-        <p className="hidden sm:block text-xs md:text-sm text-slate-500 font-normal mt-0.5">
-          Real-time Class Analytics Dashboard
-        </p>
-        </div>
-        <div className="ml-auto md:hidden shrink-0">
-          <ProfileMenu compact />
-        </div>
+        {title === 'Dashboard' && (
+          <p className="hidden sm:block text-[13px] text-slate-500 truncate">
+            {greeting(now)}, {greetingName} 👋
+          </p>
+        )}
       </div>
 
-      {/* Right Controls: Session Info, Clock, Instructor Profile */}
-      <div className="flex flex-wrap items-center gap-2 md:gap-3">
-        {/* Connection indicator */}
-        <div
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
-            connection === 'open'
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-amber-50 text-amber-700 border-amber-200'
-          }`}
-          title="Instructor WebSocket connection"
-        >
-          {connection === 'open' ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-          {connection === 'open' ? 'Connected' : connection === 'connecting' ? 'Connecting…' : 'Reconnecting…'}
-        </div>
-
-        {/* Current Session Card */}
-        <div className="min-w-0 flex-1 md:flex-none md:max-w-[280px] px-3 md:px-4 py-1.5 md:py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col justify-center shadow-xs">
-          <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
-            Current Session
-          </span>
-          <div className="flex items-center gap-2 mt-0.5 min-w-0">
-            <span className="text-sm font-semibold text-slate-800 truncate" title={session?.title}>
-              {session?.title ?? 'Loading session…'}
+      <div className="ml-auto flex items-center gap-2 md:gap-3 min-w-0">
+        {/* Current session */}
+        {session && (
+          <div
+            className="hidden sm:flex items-center gap-2 min-w-0 max-w-[300px] h-8 pl-2.5 pr-3 rounded-full border border-slate-200 bg-white text-[13px]"
+            title={`Current session: ${session.title}`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                isLive ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)]' : 'bg-slate-300'
+              }`}
+            />
+            <span className="font-medium text-slate-800 truncate">{session.title}</span>
+            <span className={`text-[11px] font-semibold shrink-0 ${isLive ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {isLive ? 'LIVE' : session.status === 'ENDED' ? 'Ended' : 'Scheduled'}
             </span>
-            {session &&
-              (isLive ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  LIVE
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200 text-slate-600">
-                  {session.status === 'ENDED' ? 'ENDED' : 'SCHEDULED'}
-                </span>
-              ))}
           </div>
-        </div>
+        )}
 
-        {/* Clock & Date Card */}
-        <div className="hidden sm:flex px-4 py-2 bg-slate-50/80 rounded-xl border border-slate-200/80 items-center gap-3 shadow-xs">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-            <Clock className="w-4 h-4" />
-          </div>
-          <div className="min-w-[72px]">
-            <div className="text-sm font-bold text-slate-800 leading-tight">
-              {now ? now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-            </div>
-            <div className="text-[11px] text-slate-500 font-medium leading-tight">
-              {now ? now.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : ' '}
-            </div>
-          </div>
-        </div>
+        {/* Live connection: icon only, details on hover */}
+        <span
+          className={`hidden md:inline-flex items-center justify-center w-8 h-8 rounded-full ${
+            connection === 'open' ? 'text-emerald-600' : 'text-amber-500'
+          }`}
+          title={connection === 'open' ? 'Live updates connected' : connection === 'connecting' ? 'Connecting…' : 'Reconnecting…'}
+          aria-label={connection === 'open' ? 'Live updates connected' : 'Live updates reconnecting'}
+        >
+          {connection === 'open' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+        </span>
 
-        <div className="hidden md:block">
-          <ProfileMenu />
-        </div>
+        <span className="hidden lg:inline text-[13px] text-slate-500 tabular-nums" suppressHydrationWarning>
+          {now ? now.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+        </span>
+
+        <ProfileMenu />
       </div>
     </header>
   );
 }
 
 /** Instructor name/avatar; clicking it opens a small account popup with Log out. */
-function ProfileMenu({ compact = false }: { compact?: boolean }) {
+function ProfileMenu() {
   const user = useDashboardStore((s) => s.user);
   const { logout, loggingOut } = useLogout();
   const [open, setOpen] = useState(false);
@@ -143,22 +129,15 @@ function ProfileMenu({ compact = false }: { compact?: boolean }) {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-3 pl-2 pr-2 py-1 rounded-xl hover:bg-slate-50 transition-colors"
+        aria-label="Account"
+        className="flex items-center gap-2 p-1 rounded-full hover:bg-slate-100 transition-colors"
       >
         <Avatar
           name={displayName}
           src={user?.avatar_url}
-          className={`${compact ? 'w-9 h-9' : 'w-10 h-10'} rounded-full object-cover ring-2 ring-blue-500/20`}
+          className="w-8 h-8 rounded-full object-cover text-xs"
         />
-        {!compact && (
-          <div className="text-left">
-            <div className="text-sm font-semibold text-slate-900 leading-tight">{displayName}</div>
-            <div className="text-[11px] text-slate-500 font-medium leading-tight capitalize">
-              {user?.role ?? 'Instructor'}
-            </div>
-          </div>
-        )}
-        {!compact && <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />}
+        <ChevronDown className={`hidden md:block w-3.5 h-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (

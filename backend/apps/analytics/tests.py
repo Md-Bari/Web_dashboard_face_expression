@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 import base64
 import io
+import asyncio
 import json
 from unittest import mock
 
@@ -140,7 +141,8 @@ def make_frame():
     return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
 
 
-@override_settings(EXPRESSION_SNAPSHOTS_ENABLED=False)  # socket tests must not write photos to the real media folder
+# Socket tests connect as roster students (guest mode) and must not write photos to the real media folder
+@override_settings(EXPRESSION_SNAPSHOTS_ENABLED=False, ALLOW_GUEST_STUDENTS=True)
 class ConsumerTestCase(TransactionTestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username='owner', password='x', role='instructor')
@@ -201,9 +203,34 @@ class ConsumerTestCase(TransactionTestCase):
         self.assertEqual(await Prediction.objects.filter(student=self.student).acount(), 0)
         await comm.disconnect()
 
+    async def test_camera_on_without_face_counts_as_no_attention(self):
+        """Looking away / leaving the desk for a few frames records attention 0, keeping the last expression."""
+        from apps.analytics import consumers
+        await Prediction.objects.acreate(session=self.session, student=self.student, raw_emotion='happy',
+                                         confidence=0.9, raw_attention=1.0, smoothed_emotion='happy',
+                                         smoothed_attention=1.0)
+        engine = get_engine()
+        with mock.patch.object(engine.emotion_model, 'session', object()), \
+                mock.patch.object(engine.emotion_model, 'predict', return_value=None), \
+                mock.patch.object(consumers, 'MIN_FRAME_INTERVAL', 0):
+            comm, reply = await self.send_one_frame()
+            self.assertEqual(reply['type'], 'face.missing')
+            for _ in range(consumers.AWAY_AFTER_FRAMES - 1):
+                await comm.send_to(text_data=json.dumps({'type': 'frame', 'image': make_frame()}))
+            for _ in range(50):  # the last frame is saved without a reply to the student
+                if await Prediction.objects.filter(student=self.student, raw_emotion='').aexists():
+                    break
+                await asyncio.sleep(0.1)
+        away = await Prediction.objects.filter(student=self.student, raw_emotion='').alast()
+        self.assertIsNotNone(away)
+        self.assertEqual(away.raw_attention, 0.0)
+        self.assertEqual(away.smoothed_emotion, 'happy')       # expression unknown: the last one stays
+        self.assertEqual(away.smoothed_attention, 0.5)          # mean of 1.0 and 0.0
+        await comm.disconnect()
+
     async def test_student_frame_produces_telemetry_and_persists_prediction(self):
         engine = get_engine()
-        frontal = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
+        frontal =[[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
         prediction = {
             'emotion': 'happy', 'confidence': 0.9,
             'scores': {'happy': 0.9, 'neutral': 0.07, 'sad': 0.03},

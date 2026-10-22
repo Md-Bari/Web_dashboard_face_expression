@@ -8,10 +8,12 @@ import type {
   JoinInfo,
   MeetInfo,
   MeetingPass,
+  ProfileInput,
   ReportData,
   SectionInfo,
   SessionInfo,
   SessionSnapshotData,
+  StudentCourse,
   TeachingSuggestionData,
 } from './types';
 
@@ -40,6 +42,21 @@ export class ApiError extends Error {
   }
 }
 
+/** Renew the access cookie from the refresh cookie (e.g. before reopening a websocket). */
+export async function refreshAuth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiBase()}/api/auth/refresh/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, {
     credentials: 'include',
@@ -49,13 +66,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
 
   // Access cookie expired: try the refresh cookie once, then repeat the request.
   if (res.status === 401 && !retried && !path.startsWith('/api/auth/')) {
-    const refreshed = await fetch(`${apiBase()}/api/auth/refresh/`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    if (refreshed.ok) return request<T>(path, init, true);
+    if (await refreshAuth()) return request<T>(path, init, true);
   }
 
   if (!res.ok) {
@@ -84,11 +95,14 @@ export const api = {
     }),
   logout: () => request<unknown>('/api/auth/logout/', { method: 'POST', body: '{}' }),
   me: () => request<AuthUser>('/api/auth/me/'),
+  updateProfile: (data: ProfileInput) => request<AuthUser>('/api/auth/me/', patch(data)),
 
   currentSession: () =>
     request<SessionInfo & { session_code: string; course: CourseInfo }>('/api/sessions/current/'),
   session: (id: number) => request<SessionInfo & { course: CourseInfo }>(`/api/sessions/${id}/`),
   courses: () => request<CourseInfo[]>('/api/courses/'),
+  /** Student: the classes they are enrolled in, with their section */
+  myCourses: () => request<StudentCourse[]>('/api/courses/'),
   course: (id: number) => request<CourseInfo>(`/api/courses/${id}/`),
   updateCourse: (id: number, data: { title?: string; code?: string }) =>
     request<CourseInfo>(`/api/courses/${id}/`, patch(data)),

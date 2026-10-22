@@ -1,12 +1,13 @@
 from django.conf import settings
 from rest_framework import status
+from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
-from .serializers import UserSerializer, CustomTokenObtainPairSerializer, ConsentUpdateSerializer
+from .serializers import UserSerializer, CustomTokenObtainPairSerializer, ConsentUpdateSerializer, ProfileSerializer
 
 
 def set_jwt_cookies(response, access_token, refresh_token=None, secure=None):
@@ -21,7 +22,7 @@ def set_jwt_cookies(response, access_token, refresh_token=None, secure=None):
     response.set_cookie(
         access_cookie_name,
         access_token,
-        max_age=3600 * 24,  # 1 day
+        max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
         httponly=True,
         secure=cookie_secure,
         samesite=cookie_samesite,
@@ -41,8 +42,25 @@ def set_jwt_cookies(response, access_token, refresh_token=None, secure=None):
         )
 
 
+class LoginUsernameThrottle(SimpleRateThrottle):
+    """Password guessing: at most 5 sign-in attempts per minute for one username, from anywhere."""
+    scope = 'login_username'
+    rate = '5/min'
+
+    def get_cache_key(self, request, view):
+        username = str(request.data.get('username', '')).strip().lower()
+        return self.cache_format % {'scope': self.scope, 'ident': username} if username else None
+
+
+class LoginIPThrottle(AnonRateThrottle):
+    """One address trying many usernames."""
+    scope = 'login_ip'
+    rate = '30/min'
+
+
 class CookieTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [LoginUsernameThrottle, LoginIPThrottle]
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -95,10 +113,16 @@ class LogoutView(APIView):
 
 
 class MeView(APIView):
+    """The signed-in user's own account; PATCH updates their name, title, e-mail and personal details."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        return Response(ProfileSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(serializer.data)
 
 

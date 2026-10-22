@@ -63,6 +63,17 @@ export interface CourseInfo {
   sections?: SectionInfo[];
 }
 
+/** A class as a student sees it: their own section, no invite codes */
+export interface StudentCourse {
+  id: number;
+  title: string;
+  code: string;
+  description?: string;
+  instructor: AuthUser;
+  my_section: SectionRef | null;
+  enrolled_at: string | null;
+}
+
 export interface EnrollmentRow {
   id: number;
   student: AuthUser;
@@ -192,6 +203,27 @@ export interface AuthUser {
   role: 'instructor' | 'student' | 'admin';
   avatar_url: string;
   display_title: string;
+  consent_given?: boolean;
+  consent_timestamp?: string | null;
+  first_name?: string;
+  last_name?: string;
+  /** Personal details: only in the user's own account (GET/PATCH /api/auth/me/) */
+  phone?: string;
+  date_of_birth?: string | null;
+  blood_group?: BloodGroup | '';
+}
+
+export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+export type BloodGroup = (typeof BLOOD_GROUPS)[number];
+
+export interface ProfileInput {
+  first_name?: string;
+  last_name?: string;
+  display_title?: string;
+  email?: string;
+  phone?: string;
+  date_of_birth?: string | null;
+  blood_group?: BloodGroup | '';
 }
 
 /** Class share (%) of each expression plus average concentration at one snapshot */

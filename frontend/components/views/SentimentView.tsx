@@ -38,7 +38,7 @@ export function SentimentView() {
           const meta = EMOTION_META[emotion];
           const Icon = meta.icon;
           return (
-            <div key={emotion} className="bg-white rounded-2xl border border-slate-100 p-3.5 shadow-xs">
+            <div key={emotion} className="bg-white rounded-xl border border-slate-200/80 p-3.5 shadow-xs">
               <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                 <Icon className="w-3.5 h-3.5" style={{ color: meta.color }} /> {meta.label}
               </p>

@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['*.trycloudflare.com', '**.trycloudflare.com', '127.0.0.1'],
   experimental: {
     agentFeedback: true,
+    optimizePackageImports: ['lucide-react', 'recharts'],
   },
   cacheComponents: true,
   partialPrefetching: true,

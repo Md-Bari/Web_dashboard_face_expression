@@ -93,7 +93,7 @@ Web_dashboard/
 |   |-- inference/
 |       |-- Dockerfile
 |       |-- requirements.txt
-|       |-- worker.py          # Redis consumer & inference dispatcher
+|       (inference runs inside the backend; no separate worker)
 |       |-- model_loader.py    # ONNX runtime handler with custom model hook
 |       |-- gaze_tracker.py    # PyGaze/MediaPipe gaze & attention calculator
 |       |-- models/            # Placeholder for user's YOLO/ONNX model file

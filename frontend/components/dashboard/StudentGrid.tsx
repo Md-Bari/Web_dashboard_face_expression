@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { LayoutGrid, List, ChevronDown, Check, X, ShieldCheck, MonitorUp, Tag } from 'lucide-react';
+import { LayoutGrid, List, ChevronDown, ChevronLeft, ChevronRight, Check, X, ShieldCheck, MonitorUp, Tag } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { StudentCard } from './StudentCard';
 import { Avatar } from './Avatar';
@@ -32,6 +32,8 @@ export function StudentGrid() {
     return () => document.removeEventListener('keydown', onKey);
   }, [selectedId, naming]);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[1]);
 
   const filteredStudents = students.filter((s) => {
     if (!matchesSection(s.section, sectionFilter, s.source === 'screen')) return false;
@@ -39,8 +41,14 @@ export function StudentGrid() {
     return s.has_data !== false && s.emotion === filter;
   });
 
+  // A filter that shrinks the list keeps the page in range
+  const pageCount = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const offset = (currentPage - 1) * pageSize;
+  const pageStudents = filteredStudents.slice(offset, offset + pageSize);
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-xs">
+    <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-xs">
       {/* Grid Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>
@@ -86,6 +94,7 @@ export function StudentGrid() {
                     onClick={() => {
                       setFilter(opt);
                       setFilterOpen(false);
+                      setPage(1);
                     }}
                     className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left hover:bg-slate-50 transition-colors ${
                       filter === opt ? 'font-bold text-blue-600 bg-blue-50/50' : 'text-slate-700'
@@ -133,25 +142,25 @@ export function StudentGrid() {
           </p>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
-            {filteredStudents.map((student, idx) => (
+            {pageStudents.map((student, idx) => (
               <StudentCard
                 key={student.id}
                 student={student}
-                index={idx + 1}
+                index={offset + idx + 1}
                 onClick={(s) => setSelectedStudent(s)}
               />
             ))}
           </div>
         ) : (
-          <div className="divide-y divide-slate-100 max-h-[460px] overflow-y-auto">
-            {filteredStudents.map((student, idx) => (
+          <div className="divide-y divide-slate-100">
+            {pageStudents.map((student, idx) => (
               <div
                 key={student.id}
                 onClick={() => setSelectedStudent(student)}
                 className="flex items-center justify-between p-2.5 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-slate-400 w-5">#{idx + 1}</span>
+                  <span className="text-xs font-bold text-slate-400 w-7">#{offset + idx + 1}</span>
                   <Avatar name={student.name} src={student.live_thumb || student.avatar_url} className="w-9 h-9 rounded-full text-xs" imgClassName="object-cover" />
                   <div>
                     <p className="text-xs font-bold text-slate-900">{student.name}</p>
@@ -172,6 +181,22 @@ export function StudentGrid() {
           </div>
         )}
       </div>
+
+      {filteredStudents.length > 0 && (
+        <Pagination
+          page={currentPage}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          total={filteredStudents.length}
+          offset={offset}
+          shown={pageStudents.length}
+          onPage={setPage}
+          onPageSize={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
+      )}
 
       {/* Legend Footer */}
       <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-slate-600">
@@ -316,3 +341,105 @@ export function StudentGrid() {
   );
 }
 
+// Whole rows of the 7-column grid
+const PAGE_SIZES = [7, 14, 28] as const;
+
+/** Page numbers to show: first, last, and the pages around the current one, with gaps as null. */
+function pageNumbers(page: number, count: number): (number | null)[] {
+  const wanted = new Set([1, count, page - 1, page, page + 1].filter((n) => n >= 1 && n <= count));
+  const sorted = [...wanted].sort((a, b) => a - b);
+  const out: (number | null)[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) out.push(null);
+    out.push(n);
+  });
+  return out;
+}
+
+function Pagination({
+  page,
+  pageCount,
+  pageSize,
+  total,
+  offset,
+  shown,
+  onPage,
+  onPageSize,
+}: {
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  total: number;
+  offset: number;
+  shown: number;
+  onPage: (page: number) => void;
+  onPageSize: (size: number) => void;
+}) {
+  const button =
+    'min-w-8 h-8 px-2 inline-flex items-center justify-center rounded-lg border text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+  return (
+    <nav
+      aria-label="Student pages"
+      className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500"
+    >
+      <div className="flex items-center gap-3">
+        <span>
+          Showing <b className="text-slate-800">{offset + 1}</b>–<b className="text-slate-800">{offset + shown}</b> of{' '}
+          <b className="text-slate-800">{total}</b>
+        </span>
+        <label className="inline-flex items-center gap-1.5">
+          Per page
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSize(Number(e.target.value))}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-hidden focus:border-blue-500"
+          >
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPage(page - 1)}
+          disabled={page <= 1}
+          aria-label="Previous page"
+          className={`${button} border-slate-200 bg-white text-slate-600 hover:bg-slate-50`}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        {pageNumbers(page, pageCount).map((n, i) =>
+          n === null ? (
+            <span key={`gap-${i}`} className="px-1 text-slate-400">
+              …
+            </span>
+          ) : (
+            <button
+              key={n}
+              onClick={() => onPage(n)}
+              aria-current={n === page ? 'page' : undefined}
+              className={`${button} ${
+                n === page
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {n}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onPage(page + 1)}
+          disabled={page >= pageCount}
+          aria-label="Next page"
+          className={`${button} border-slate-200 bg-white text-slate-600 hover:bg-slate-50`}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </nav>
+  );
+}

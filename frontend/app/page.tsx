@@ -8,15 +8,13 @@ import { Sidebar, type TabName } from '@/components/dashboard/Sidebar';
 import { Header } from '@/components/dashboard/Header';
 import { MetricCards } from '@/components/dashboard/MetricCards';
 import { StudentGrid } from '@/components/dashboard/StudentGrid';
-import { SentimentDonut } from '@/components/dashboard/SentimentDonut';
-import { ConcentrationOverview } from '@/components/dashboard/ConcentrationOverview';
+import dynamic from 'next/dynamic';
+import { ChartSkeleton } from '@/components/dashboard/ChartSkeleton';
 import { TeachingSuggestions } from '@/components/dashboard/TeachingSuggestions';
 import { LiveMonitoringView } from '@/components/views/LiveMonitoringView';
 import { StudentsView } from '@/components/views/StudentsView';
 import { PhotosView } from '@/components/views/PhotosView';
-import { SentimentView } from '@/components/views/SentimentView';
-import { EyeTrackingView } from '@/components/views/EyeTrackingView';
-import { InsightsView } from '@/components/views/InsightsView';
+
 import { SuggestionsView } from '@/components/views/SuggestionsView';
 import { ReportsView } from '@/components/views/ReportsView';
 import { SettingsView } from '@/components/views/SettingsView';
@@ -30,6 +28,24 @@ import { SessionSetup } from '@/components/dashboard/SessionSetup';
 import { ScreenShareButton } from '@/components/views/ScreenMonitor';
 import { InviteStudentsButton } from '@/components/dashboard/InviteStudents';
 import { SectionSelect } from '@/components/dashboard/SectionSelect';
+
+// Charts (recharts) are split out of the first page load
+const SentimentDonut = dynamic(() => import('@/components/dashboard/SentimentDonut').then((m) => m.SentimentDonut), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
+const ConcentrationOverview = dynamic(
+  () => import('@/components/dashboard/ConcentrationOverview').then((m) => m.ConcentrationOverview),
+  { ssr: false, loading: () => <ChartSkeleton /> }
+);
+const SentimentView = dynamic(() => import('@/components/views/SentimentView').then((m) => m.SentimentView), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
+const EyeTrackingView = dynamic(() => import('@/components/views/EyeTrackingView').then((m) => m.EyeTrackingView), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
 
 type Boot = { state: 'loading' } | { state: 'ready' } | { state: 'setup' } | { state: 'error'; message: string };
 
@@ -148,7 +164,7 @@ export default function DashboardPage() {
 
   if (boot.state === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] text-slate-500 text-sm gap-2">
+      <div className="min-h-screen flex items-center justify-center bg-canvas text-slate-500 text-sm gap-2">
         <Loader2 className="w-4 h-4 animate-spin" /> Loading dashboard…
       </div>
     );
@@ -160,7 +176,7 @@ export default function DashboardPage() {
 
   if (boot.state === 'error') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#F8FAFC] p-6 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-canvas p-6 text-center">
         <p className="text-sm text-slate-700 max-w-md">{boot.message}</p>
         <div className="flex gap-2">
           <button onClick={() => window.location.reload()} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold">
@@ -177,7 +193,7 @@ export default function DashboardPage() {
   const ended = session?.status === 'ENDED';
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] font-sans antialiased text-slate-800">
+    <div className="flex min-h-screen bg-canvas text-slate-800">
       <Sidebar
         currentTab={tab}
         onTabChange={setTab}
@@ -187,47 +203,56 @@ export default function DashboardPage() {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <Header onMenuClick={() => setMenuOpen(true)} />
+        <Header title={tab} onMenuClick={() => setMenuOpen(true)} />
 
-        <main className="p-3 sm:p-5 space-y-4 max-w-[1600px] w-full mx-auto">
+        <main className="px-4 py-5 md:px-6 md:py-6 space-y-5 max-w-[1600px] w-full mx-auto">
           {/* Status ribbon: pipeline state, student portal */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50/70 border border-blue-100 rounded-xl px-4 py-2 text-xs">
-            <div className="flex items-center gap-2 text-blue-900 font-medium">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-2 h-8 px-3 rounded-full border border-slate-200 bg-white text-xs text-slate-600">
               <span
-                className={`w-2 h-2 rounded-full ${
-                  ended ? 'bg-slate-400' : connection === 'open' ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'
+                className={`w-1.5 h-1.5 rounded-full ${
+                  ended ? 'bg-slate-400' : connection === 'open' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
                 }`}
               ></span>
               <span>
                 {ended
-                  ? 'Session ended. Telemetry is paused - see Reports for the summary.'
+                  ? 'Session ended · see Reports for the summary'
                   : connection === 'open'
-                  ? 'Real-time telemetry pipeline active.'
-                  : 'Reconnecting to the telemetry server…'}
+                  ? 'Live analytics running'
+                  : 'Reconnecting…'}
               </span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {!['Classes', 'Sessions', 'Students', 'Settings', 'Live Monitoring'].includes(tab) && <SectionSelect />}
+              {!ended && session && <ScreenShareButton compact />}
+              <InviteStudentsButton />
               {session?.status === 'LIVE' && session.join_code && (
                 <a
                   href={`/meet/${session.join_code}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap h-8 px-3.5 rounded-lg bg-blue-600 text-white text-[13px] font-medium shadow-sm hover:bg-blue-700 transition-colors"
                 >
-                  <Video className="w-3.5 h-3.5" /> Join class meeting
+                  <Video className="w-4 h-4" /> Join class
                 </a>
               )}
-              {!['Classes', 'Sessions', 'Students', 'Settings'].includes(tab) && <SectionSelect />}
-              {!ended && session && <ScreenShareButton compact />}
-              <InviteStudentsButton />
             </div>
           </div>
 
           {!session && tab !== 'Classes' && tab !== 'Sessions' && (
-            <p className="text-xs text-slate-600 bg-white border border-slate-100 rounded-xl p-3">
-              No session yet. Schedule or start one on the <b>Sessions</b> page.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-5">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-900">No class session yet</p>
+                <p className="text-[13px] text-slate-500 mt-0.5">Schedule a session or start one now; its live data appears here.</p>
+              </div>
+              <button
+                onClick={() => setTab('Sessions')}
+                className="inline-flex items-center justify-center h-8 px-3.5 rounded-lg bg-slate-900 text-white text-[13px] font-medium hover:bg-slate-800"
+              >
+                Go to Sessions
+              </button>
+            </div>
           )}
 
           {tab === 'Dashboard' && (
@@ -252,7 +277,6 @@ export default function DashboardPage() {
           {tab === 'Expression Photos' && <PhotosView />}
           {tab === 'Sentiment Analysis' && <SentimentView />}
           {tab === 'Eye Tracking' && <EyeTrackingView />}
-          {tab === 'AI Insights' && <InsightsView />}
           {tab === 'Teaching Suggestions' && <SuggestionsView />}
           {tab === 'Reports' && <ReportsView />}
           {tab === 'Settings' && <SettingsView />}

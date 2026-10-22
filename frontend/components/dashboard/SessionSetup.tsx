@@ -48,7 +48,7 @@ export function SessionSetup({ onCreated }: { onCreated: () => void }) {
     'mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-hidden focus:border-blue-500';
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6">
+    <main className="min-h-screen flex items-center justify-center bg-canvas p-6">
       <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-xl border border-slate-100">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

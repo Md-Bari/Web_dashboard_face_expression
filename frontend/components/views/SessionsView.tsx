@@ -181,7 +181,7 @@ function SessionRow({
       : 'Not scheduled - start it when you are ready';
 
   return (
-    <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+    <div role="group" aria-label={s.title} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
           <span className="truncate">{s.title}</span>
@@ -203,7 +203,12 @@ function SessionRow({
         {busy && <Loader2 className="w-4 h-4 animate-spin text-slate-400 self-center" />}
         {s.status !== 'ENDED' && link && (
           <>
-            <a href={link} target="_blank" rel="noreferrer" className={`${secondary} !bg-blue-600 !border-blue-600 !text-white hover:!bg-blue-700`}>
+            <a
+              href={link}
+              target="_blank"
+              rel="noreferrer"
+              className={s.status === 'LIVE' ? `${secondary} !bg-blue-600 !border-blue-600 !text-white hover:!bg-blue-700` : secondary}
+            >
               <Video className="w-3.5 h-3.5" /> {s.status === 'LIVE' ? 'Join meeting' : 'Open meeting'}
             </a>
             <button

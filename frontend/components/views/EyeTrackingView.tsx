@@ -36,7 +36,7 @@ export function EyeTrackingView() {
     <div className="space-y-4">
       <PageTitle
         title="Eye Tracking"
-        subtitle="Gaze-based attention score per student (0-100%), estimated from the face crop"
+        subtitle="Attention per student (0-100%) from head direction: facing the screen is high; turned away or out of frame is low"
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -94,7 +94,7 @@ export function EyeTrackingView() {
         </Card>
       </div>
 
-      <Card title="Needs Attention" subtitle="Students with the lowest gaze attention right now">
+      <Card title="Needs Attention" subtitle="Students with the lowest attention right now">
         <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
           {lowest.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-3 text-xs">

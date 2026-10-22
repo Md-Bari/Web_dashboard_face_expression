@@ -15,7 +15,7 @@ import { Card } from './ui';
 export function ScreenShareButton({ compact = false }: { compact?: boolean }) {
   const { screen, connection, session } = useDashboardStore();
   const disabled = connection !== 'open' || session?.status !== 'LIVE';
-  const button = 'inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 rounded-lg text-xs font-semibold disabled:opacity-50';
+  const button = 'inline-flex items-center gap-1.5 whitespace-nowrap h-8 px-3 rounded-lg text-[13px] font-medium transition-colors disabled:opacity-50';
 
   if (screen.sharing) {
     return (
@@ -31,7 +31,7 @@ export function ScreenShareButton({ compact = false }: { compact?: boolean }) {
         onClick={() => startCapture('screen')}
         disabled={disabled}
         title={disabled ? 'Start the live session first' : 'Share a Meet / Zoom / Teams window'}
-        className={`${button} bg-blue-600 text-white hover:bg-blue-700`}
+        className={`${button} ${compact ? 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
       >
         <MonitorUp className="w-3.5 h-3.5" /> {compact ? 'Monitor screen' : 'Share meeting window'}
       </button>
@@ -39,7 +39,7 @@ export function ScreenShareButton({ compact = false }: { compact?: boolean }) {
         onClick={() => startCapture('camera')}
         disabled={disabled}
         title={disabled ? 'Start the live session first' : 'Use this device camera (e.g. pointed at the classroom)'}
-        className={`${button} bg-white text-blue-700 border border-blue-200 hover:bg-blue-50`}
+        className={`${button} bg-white text-slate-700 border border-slate-200 hover:bg-slate-50`}
       >
         <Camera className="w-3.5 h-3.5" /> Use camera
       </button>

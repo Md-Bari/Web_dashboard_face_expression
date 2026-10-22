@@ -38,7 +38,7 @@ function Join({ params }: { params: Promise<{ code: string }> }) {
   const [checkingUser, setCheckingUser] = useState(true);
 
   const goOn = (live: JoinInfo['live_session']) =>
-    router.replace(live?.join_code ? `/meet/${live.join_code}` : live ? `/student?session=${live.id}` : '/student');
+    router.replace(live?.join_code ? `/meet/${live.join_code}` : '/student');
 
   useEffect(() => {
     let cancelled = false;

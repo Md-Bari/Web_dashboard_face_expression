@@ -2,13 +2,23 @@
 
 import React, { use, useCallback, useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
-import { DisconnectReason } from 'livekit-client';
 import { AlertCircle, CalendarClock, GraduationCap, Loader2, ShieldCheck } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import type { MeetInfo, MeetingPass } from '@/lib/types';
 import { AccountForms } from '@/components/auth/AccountForms';
 import { Lobby } from '@/components/meeting/Lobby';
-import { MeetingRoom } from '@/components/meeting/MeetingRoom';
+import dynamic from 'next/dynamic';
+import type { LeaveReason } from '@/components/meeting/MeetingRoom';
+
+// The LiveKit SDK is large: load it only when the student actually enters the room
+const MeetingRoom = dynamic(() => import('@/components/meeting/MeetingRoom').then((m) => m.MeetingRoom), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-dvh flex items-center justify-center bg-slate-950">
+      <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+    </div>
+  ),
+});
 
 type Stage =
   | { name: 'loading' }
@@ -148,10 +158,10 @@ function Meet({ params }: { params: Promise<{ code: string }> }) {
     return () => clearInterval(timer);
   }, [stage, code, enter]);
 
-  const onLeft = (reason?: DisconnectReason) => {
-    if (reason === DisconnectReason.ROOM_DELETED) {
+  const onLeft = (reason: LeaveReason) => {
+    if (reason === 'ended') {
       setStage({ name: 'message', title: 'The class has ended', text: 'Your instructor ended the class. Thanks for joining!' });
-    } else if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+    } else if (reason === 'removed') {
       setStage({ name: 'message', title: 'You were removed', text: 'The instructor removed you from this class meeting.' });
     } else {
       setStage({ name: 'message', title: 'You left the class', text: 'You can rejoin while the class is running.', rejoin: true });

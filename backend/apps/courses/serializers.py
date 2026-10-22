@@ -74,6 +74,23 @@ class CourseSerializer(serializers.ModelSerializer):
             for s in obj.sections.all()
         ]
 
+    def to_representation(self, obj):
+        user = getattr(self.context.get('request'), 'user', None)
+        if not (user and user.is_authenticated and user.role == 'student'):
+            return super().to_representation(obj)
+        # A student sees the class and their own section, never the instructor's invite codes
+        enrollment = obj.enrollments.filter(student=user).select_related('section').first()
+        section = enrollment.section if enrollment else None
+        return {
+            'id': obj.id,
+            'title': obj.title,
+            'code': obj.code,
+            'description': obj.description,
+            'instructor': UserSerializer(obj.instructor).data,
+            'my_section': {'id': section.id, 'name': section.name} if section else None,
+            'enrolled_at': enrollment.enrolled_at if enrollment else None,
+        }
+
 
 class CourseBriefSerializer(serializers.ModelSerializer):
     class Meta:

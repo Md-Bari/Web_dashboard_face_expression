@@ -32,17 +32,20 @@ export function ConcentrationOverview() {
   const lowConcentrationStudents = students.filter((s) => s.online && s.has_data !== false && s.attention < 0.5);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-xs">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-bold text-slate-900">
-          Concentration Overview <span className="text-xs font-normal text-slate-500">(Eye Tracking)</span>
-        </h3>
+    <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[14px] font-semibold text-slate-900 tracking-tight">Attention</h3>
         {active && <span className="text-[10px] text-slate-400">Trend: all sections</span>}
       </div>
 
       <div className="flex flex-col sm:flex-row items-center gap-4">
         {/* Line Chart */}
         <div className="w-full sm:w-[65%] h-[120px]">
+          {timelineData.length < 2 ? (
+            <div className="h-full flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-[12px] text-slate-400 text-center px-4">
+              The attention trend appears after the first minute of class
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={timelineData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
               <XAxis
@@ -76,6 +79,7 @@ export function ConcentrationOverview() {
               />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </div>
 
         {/* Circular Progress Gauge & Low Attention Warning */}
@@ -115,17 +119,17 @@ export function ConcentrationOverview() {
           </div>
 
           <div className="mt-1.5">
-            <p className="text-xs font-semibold text-rose-500">
-              {snapshot.low_concentration_count} Students
+            <p className={`text-xs font-semibold ${snapshot.low_concentration_count ? 'text-rose-600' : 'text-slate-500'}`}>
+              {snapshot.low_concentration_count} student{snapshot.low_concentration_count === 1 ? '' : 's'}
             </p>
-            <p className="text-[10px] text-slate-400">Low Concentration</p>
+            <p className="text-[11px] text-slate-400">below 50%</p>
           </div>
 
           <button
             onClick={() => setDetailsModalOpen(true)}
-            className="mt-2 px-3 py-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-300 rounded-lg hover:bg-blue-50/50 transition-colors"
+            className="mt-2 h-7 px-3 text-[12px] font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-md transition-colors"
           >
-            View Details
+            View details
           </button>
         </div>
       </div>
@@ -151,7 +155,7 @@ export function ConcentrationOverview() {
             </div>
 
             <p className="text-xs text-slate-500 mb-3">
-              Students identified with continuous gaze divergence or low attention scores (&lt;50% over rolling 10s window):
+              Students turned away from the screen, out of frame, or below 50% attention over the last 10 s:
             </p>
 
             <div className="space-y-2 max-h-56 overflow-y-auto mb-4">

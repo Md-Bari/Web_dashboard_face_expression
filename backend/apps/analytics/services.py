@@ -9,6 +9,10 @@ from .models import ParticipantStat, Prediction, SessionSnapshot, TeachingSugges
 from apps.courses.models import ClassSession
 
 
+# raw_emotion of a frame where the camera is on but no face is found: no expression, attention 0
+AWAY = ''
+
+
 class SmoothingEngine:
     """
     Smooths predictions over a 10-second rolling window per student (or per screen
@@ -28,12 +32,15 @@ class SmoothingEngine:
             ).values_list('raw_emotion', 'raw_attention')
         )
 
-        emotions = [r[0] for r in recent_predictions] + [current_raw_emotion]
+        emotions = [e for e in [r[0] for r in recent_predictions] + [current_raw_emotion] if e != AWAY]
         attentions = [r[1] for r in recent_predictions] + [current_raw_attention]
 
-        # Majority vote for emotion
-        emotion_counts = Counter(emotions)
-        smoothed_emotion = emotion_counts.most_common(1)[0][0]
+        # Majority vote for emotion; while the face is away the last known expression stays
+        if emotions:
+            smoothed_emotion = Counter(emotions).most_common(1)[0][0]
+        else:
+            last = Prediction.objects.filter(session=session, **who).order_by('-timestamp').first()
+            smoothed_emotion = last.smoothed_emotion if last else 'neutral'
 
         # Mean for attention
         smoothed_attention = round(float(sum(attentions) / len(attentions)), 3)

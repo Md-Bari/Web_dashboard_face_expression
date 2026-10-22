@@ -17,7 +17,7 @@ export function SentimentDonut() {
   const slices = data.filter((d) => d.value > 0);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-xs">
+    <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-xs">
       <h3 className="text-sm font-bold text-slate-900 mb-2">Expression Distribution</h3>
 
       <div className="flex items-center justify-between gap-3">

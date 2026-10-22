@@ -17,12 +17,14 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`bg-white rounded-2xl border border-slate-100 p-4 shadow-xs ${className}`}>
+    <section
+      className={`bg-white rounded-xl border border-slate-200/80 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${className}`}
+    >
       {(title || action) && (
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div className="min-w-0 flex-1 basis-48">
-            {title && <h2 className="text-sm font-bold text-slate-900">{title}</h2>}
-            {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
+            {title && <h2 className="text-[14px] font-semibold text-slate-900 tracking-tight">{title}</h2>}
+            {subtitle && <p className="text-[12px] text-slate-500 mt-0.5">{subtitle}</p>}
           </div>
           {action}
         </div>
@@ -36,8 +38,8 @@ export function PageTitle({ title, subtitle, action }: { title: string; subtitle
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-        {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+        <h2 className="text-xl font-semibold text-slate-900 tracking-tight">{title}</h2>
+        {subtitle && <p className="text-[13px] text-slate-500 mt-1">{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -53,10 +55,10 @@ export function Stat({ label, value, hint, tone = 'slate' }: { label: string; va
     blue: 'text-blue-600',
   };
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-xs">
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className={`text-2xl font-bold leading-tight mt-0.5 ${tones[tone]}`}>{value}</p>
-      {hint && <p className="text-[11px] text-slate-400 mt-0.5">{hint}</p>}
+    <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <p className="text-[12px] font-medium text-slate-500">{label}</p>
+      <p className={`text-[26px] font-semibold tracking-tight leading-tight mt-1 tabular-nums ${tones[tone]}`}>{value}</p>
+      {hint && <p className="text-[12px] text-slate-400 mt-0.5">{hint}</p>}
     </div>
   );
 }

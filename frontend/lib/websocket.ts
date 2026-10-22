@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useDashboardStore } from './store';
 import { wsBase } from './config';
+import { refreshAuth } from './api';
 import { handleScreenResult } from './screenCapture';
 import type {
   ModelStatusData,
@@ -48,6 +49,7 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
     let disposed = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
+    let authRetried = false;
     const store = () => useDashboardStore.getState();
 
     function handle(payload: ServerMessage) {
@@ -113,6 +115,7 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
 
       ws.onopen = () => {
         attempts = 0;
+        authRetried = false;
         store().setConnection('open');
       };
 
@@ -128,6 +131,16 @@ export function useInstructorSocket(sessionId: number | null, onAuthFailure?: ()
         if (activeSocket === ws) activeSocket = null;
         if (disposed) return;
         store().setConnection('closed');
+        if (event.code === CLOSE_UNAUTHORIZED && !authRetried) {
+          // Access cookie expired while connected: renew it once, then reconnect
+          authRetried = true;
+          refreshAuth().then((ok) => {
+            if (disposed) return;
+            if (ok) connect();
+            else onAuthFailure?.();
+          });
+          return;
+        }
         if (event.code === CLOSE_UNAUTHORIZED || event.code === CLOSE_FORBIDDEN) {
           onAuthFailure?.();
           return;

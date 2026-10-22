@@ -116,7 +116,7 @@ export function TeachingSuggestions({ onViewAll }: { onViewAll?: () => void }) {
   const [active, setActive] = useState<TeachingSuggestionData | null>(null);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-xs">
+    <div className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-xs">
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
         <Sparkles className="w-4 h-4 text-blue-600" />
@@ -176,8 +176,8 @@ export function TeachingSuggestions({ onViewAll }: { onViewAll?: () => void }) {
       <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-1.5 text-[10px] text-slate-400">
         <Info className="w-3.5 h-3.5 shrink-0" />
         <span>
-          System uses deep learning for sentiment classification, PyGaze for eye tracking, and XAI for model
-          interpretability.
+          Expressions come from a deep-learning model; attention from head direction (facing the screen or
+          not). Suggestions follow fixed, explainable rules.
         </span>
       </div>
 

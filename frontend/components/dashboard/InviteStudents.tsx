@@ -17,7 +17,7 @@ export function InviteStudentsButton({ compact = false }: { compact?: boolean })
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-50"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap h-8 px-3 rounded-lg bg-white border border-slate-200 text-slate-700 text-[13px] font-medium hover:bg-slate-50 hover:border-slate-300 transition-colors"
       >
         <UserPlus className="w-3.5 h-3.5" /> {compact ? 'Invite' : 'Invite students'}
       </button>

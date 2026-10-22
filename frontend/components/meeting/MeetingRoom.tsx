@@ -45,6 +45,15 @@ import type { MeetingPass } from '@/lib/types';
 
 type Panel = 'chat' | 'people' | 'insights' | null;
 
+/** Why the meeting closed, without exposing livekit-client types to the (eagerly loaded) page */
+export type LeaveReason = 'ended' | 'removed' | 'left';
+
+function leaveReason(reason?: DisconnectReason): LeaveReason {
+  if (reason === DisconnectReason.ROOM_DELETED) return 'ended';
+  if (reason === DisconnectReason.PARTICIPANT_REMOVED) return 'removed';
+  return 'left';
+}
+
 interface MeetingRoomProps {
   pass: MeetingPass;
   sessionId: number;
@@ -52,7 +61,7 @@ interface MeetingRoomProps {
   subtitle: string;
   startedAt: string | null;
   choices: { audio: boolean; video: boolean };
-  onLeft: (reason?: DisconnectReason) => void;
+  onLeft: (reason: LeaveReason) => void;
 }
 
 /** The class meeting: video grid, controls, chat, participants and (for the instructor) live expression insights. */
@@ -64,7 +73,7 @@ export function MeetingRoom({ pass, sessionId, title, subtitle, startedAt, choic
       connect
       audio={choices.audio}
       video={choices.video}
-      onDisconnected={onLeft}
+      onDisconnected={(reason) => onLeft(leaveReason(reason))}
       // No camera or microphone on this device: stay in the class with it off
       onMediaDeviceFailure={() => undefined}
       data-lk-theme="default"

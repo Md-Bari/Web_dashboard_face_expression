@@ -6,67 +6,82 @@ import { useSectionView } from '@/lib/sections';
 import { concentrationLabel } from '@/lib/format';
 import { EMOTIONS, EMOTION_META } from '@/lib/emotions';
 
+/** One KPI: label with a colour key, a big number, and a quiet hint line */
+function Kpi({
+  label,
+  value,
+  hint,
+  hintClass = 'text-slate-400',
+  dot,
+  icon: Icon,
+  trend,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint: React.ReactNode;
+  hintClass?: string;
+  dot?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  trend?: 'up' | 'down';
+}) {
+  return (
+    <div className="bg-white px-4 py-3.5 min-w-0">
+      <p className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500 truncate">
+        {dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dot }} />}
+        {Icon && <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+        {label}
+      </p>
+      <div className="mt-1.5 flex items-baseline gap-1">
+        <span className="text-[24px] font-semibold tracking-tight text-slate-900 tabular-nums leading-none">{value}</span>
+        {trend === 'up' && <ArrowUp className="w-3.5 h-3.5 text-slate-400" aria-label="up since last update" />}
+        {trend === 'down' && <ArrowDown className="w-3.5 h-3.5 text-slate-400" aria-label="down since last update" />}
+      </div>
+      <p className={`mt-1 text-[12px] truncate ${hintClass}`}>{hint}</p>
+    </div>
+  );
+}
+
 export function MetricCards() {
   const { snapshot, previousSnapshot, students } = useSectionView();
   const onlineCount = students.filter((s) => s.online).length;
   const quality = concentrationLabel(snapshot.avg_concentration);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
-      {/* Total Students */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white shrink-0">
-          <Users className="w-5 h-5" />
-        </div>
-        <div>
-          <p className="text-xs font-medium text-slate-500">Students</p>
-          <p className="text-xl font-bold text-slate-900 leading-tight">{students.length || snapshot.total_students}</p>
-          <p className="text-[11px] font-semibold text-emerald-600">{onlineCount} online</p>
-        </div>
-      </div>
+    // Hairline grid: the 1px gaps show the border colour between tiles
+    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-px bg-slate-200/80 rounded-xl border border-slate-200/80 overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <Kpi
+        label="Students"
+        icon={Users}
+        value={students.length || snapshot.total_students}
+        hint={`${onlineCount} online`}
+        hintClass="text-emerald-600 font-medium"
+      />
 
-      {/* One tile per expression class; arrows compare with the previous aggregation */}
+      {/* One tile per expression; arrows compare with the previous aggregation */}
       {EMOTIONS.map((emotion) => {
         const meta = EMOTION_META[emotion];
-        const Icon = meta.icon;
         const pct = snapshot.emotion_pcts[emotion] ?? 0;
         const prev = previousSnapshot?.emotion_pcts?.[emotion];
+        const n = snapshot.emotion_counts[emotion] ?? 0;
         return (
-          <div key={emotion} className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0"
-              style={{ backgroundColor: meta.color }}
-            >
-              <Icon className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500">{meta.label}</p>
-              <div className="flex items-center gap-1">
-                <p className="text-xl font-bold text-slate-900 leading-tight">{pct}%</p>
-                {prev !== undefined && pct !== prev &&
-                  (pct > prev ? (
-                    <ArrowUp className="w-3.5 h-3.5 text-slate-500" />
-                  ) : (
-                    <ArrowDown className="w-3.5 h-3.5 text-slate-500" />
-                  ))}
-              </div>
-              <p className="text-[11px] font-medium text-slate-400">{snapshot.emotion_counts[emotion] ?? 0} students</p>
-            </div>
-          </div>
+          <Kpi
+            key={emotion}
+            label={meta.label}
+            dot={meta.color}
+            value={`${pct}%`}
+            trend={prev === undefined || pct === prev ? undefined : pct > prev ? 'up' : 'down'}
+            hint={`${n} student${n === 1 ? '' : 's'}`}
+          />
         );
       })}
 
-      {/* Avg Concentration */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0">
-          <Target className="w-5 h-5" />
-        </div>
-        <div>
-          <p className="text-xs font-medium text-slate-500">Concentration</p>
-          <p className="text-xl font-bold text-slate-900 leading-tight">{snapshot.avg_concentration}%</p>
-          <span className={`text-[11px] font-semibold ${quality.className}`}>{quality.text}</span>
-        </div>
-      </div>
+      <Kpi
+        label="Concentration"
+        icon={Target}
+        value={`${snapshot.avg_concentration}%`}
+        hint={snapshot.total_students ? quality.text : 'No data yet'}
+        hintClass={snapshot.total_students ? `font-medium ${quality.className}` : 'text-slate-400'}
+      />
     </div>
   );
 }

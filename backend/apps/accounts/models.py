@@ -9,12 +9,17 @@ class User(AbstractUser):
         ('student', 'Student'),
         ('admin', 'Admin'),
     )
+    BLOOD_GROUPS = [(g, g) for g in ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')]
 
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
     avatar_url = models.CharField(max_length=500, blank=True, default='')
     display_title = models.CharField(max_length=100, blank=True, default='')  # e.g. Dr. Laohakangvalvit
     consent_given = models.BooleanField(default=False)
     consent_timestamp = models.DateTimeField(null=True, blank=True)
+    # Personal details, edited by the user in Settings and shown only to them (and in /admin)
+    phone = models.CharField(max_length=20, blank=True, default='')
+    date_of_birth = models.DateField(null=True, blank=True)
+    blood_group = models.CharField(max_length=3, choices=BLOOD_GROUPS, blank=True, default='')
 
     def save(self, *args, **kwargs):
         # createsuperuser does not ask for a role; a superuser is always an admin, never a student

@@ -327,3 +327,56 @@ class ClassSectionTestCase(TestCase):
         self.b.delete()
         info = self.api.get(f'/api/join/{self.course.join_code}/').data
         self.assertEqual(info['section'], 'A')  # the only section
+
+
+class StudentDashboardTestCase(TestCase):
+    """A student in two classes sees each class with their own section and only that section's sessions."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.teacher = User.objects.create_user(username='dash_teacher', password='x', role='instructor')
+        self.student = User.objects.create_user(username='dash_student', password='x', role='student')
+        self.math = Course.objects.create(title='Math', code='MATH', instructor=self.teacher)
+        self.bio = Course.objects.create(title='Bio', code='BIO', instructor=self.teacher)
+        self.math_a = Section.objects.create(course=self.math, name='A')
+        self.math_b = Section.objects.create(course=self.math, name='B')
+        self.bio_c = Section.objects.create(course=self.bio, name='C')
+        Enrollment.objects.create(course=self.math, student=self.student, section=self.math_a)
+        Enrollment.objects.create(course=self.bio, student=self.student, section=self.bio_c)
+        self.api = APIClient()
+        self.api.force_authenticate(self.student)
+
+    def _session(self, course, title, sections=(), **extra):
+        s = ClassSession.objects.create(course=course, title=title, session_code=title.replace(' ', '-'), **extra)
+        s.sections.set(sections)
+        return s
+
+    def test_courses_show_my_section_without_invite_codes(self):
+        courses = {c['code']: c for c in self.api.get('/api/courses/').data}
+        self.assertEqual(set(courses), {'MATH', 'BIO'})
+        self.assertEqual(courses['MATH']['my_section']['name'], 'A')
+        self.assertEqual(courses['BIO']['my_section']['name'], 'C')
+        for course in courses.values():
+            self.assertNotIn('join_code', course)
+            self.assertNotIn('sections', course)
+
+    def test_sessions_are_per_course_and_section(self):
+        self._session(self.math, 'Math A live', [self.math_a], status='LIVE')
+        self._session(self.math, 'Math B only', [self.math_b], status='LIVE')
+        self._session(self.math, 'Math whole class', status='SCHEDULED',
+                      scheduled_for=timezone.now() + timedelta(days=1))
+        self._session(self.bio, 'Bio C', [self.bio_c], status='SCHEDULED',
+                      scheduled_for=timezone.now() + timedelta(hours=2))
+        other = Course.objects.create(title='Art', code='ART', instructor=self.teacher)
+        self._session(other, 'Not my class', status='LIVE')
+        rows = self.api.get('/api/sessions/').data
+        titles = [r['title'] for r in rows]
+        self.assertEqual(titles, ['Math A live', 'Bio C', 'Math whole class'])  # live first, then by start time
+        self.assertEqual({r['course']['code'] for r in rows}, {'MATH', 'BIO'})
+        self.assertTrue(all('join_code' not in r['course'] for r in rows))
+
+    def test_instructors_still_see_invite_codes(self):
+        self.api.force_authenticate(self.teacher)
+        course = self.api.get(f'/api/courses/{self.math.id}/').data
+        self.assertEqual(course['join_code'], self.math.join_code)
+        self.assertEqual(len(course['sections']), 2)

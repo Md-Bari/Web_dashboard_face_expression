@@ -10,12 +10,21 @@ from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-t+sy^-+3sfj@1r9=)tpfy5=ox85a-!n92lg!_)gbj*frhio@!i')
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = [h for h in os.environ.get('ALLOWED_HOSTS', '*').split(',') if h]
+# Required outside DEBUG; generate one with:
+#   python -c "import secrets; print(secrets.token_urlsafe(50))"
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise RuntimeError('SECRET_KEY is not set. Add a random SECRET_KEY to .env.')
+    SECRET_KEY = 'django-insecure-local-development-only'
+
+# localhost, the Docker service names nginx proxies to, and Cloudflare quick tunnels
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get(
+    'ALLOWED_HOSTS', 'localhost,127.0.0.1,backend,.trycloudflare.com'
+).split(',') if h.strip()]
 
 # Running behind a reverse proxy / Cloudflare Tunnel (cloudflared). The tunnel
 # terminates TLS and forwards X-Forwarded-Proto, so Django must trust that header
@@ -136,7 +145,7 @@ REST_FRAMEWORK = {
 
 # SimpleJWT configuration
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # renewed silently from the refresh cookie
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': False,
@@ -153,11 +162,12 @@ AUTH_COOKIE_SAMESITE = 'Lax'
 
 # CORS settings
 CORS_ALLOW_CREDENTIALS = True
+# The app is served same-origin through nginx; only the plain Next dev server needs CORS
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # Facilitate development and local network testing
+CORS_ALLOW_ALL_ORIGINS = False
 
 # Channels channel layer configuration
 REDIS_HOST = os.environ.get('REDIS_HOST', '127.0.0.1')
@@ -189,7 +199,7 @@ else:
 # INPROCESS_AGGREGATOR: aggregate snapshots inside the ASGI server (turn off when Celery beat does it)
 INPROCESS_AGGREGATOR = os.environ.get('INPROCESS_AGGREGATOR', 'True') == 'True'
 # ALLOW_GUEST_STUDENTS: open student portal (pick a roster name, no login). Development only.
-ALLOW_GUEST_STUDENTS = os.environ.get('ALLOW_GUEST_STUDENTS', str(DEBUG)) == 'True'
+ALLOW_GUEST_STUDENTS = os.environ.get('ALLOW_GUEST_STUDENTS', 'False') == 'True'
 
 # Celery Configuration
 CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"

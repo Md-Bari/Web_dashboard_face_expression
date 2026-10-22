@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { GraduationCap, Loader2, Video } from 'lucide-react';
+import { GraduationCap, Loader2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useDashboardStore } from '@/lib/store';
 import { homeFor, safeNext } from '@/lib/roles';
@@ -48,17 +47,21 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#0B1528] p-6">
-      <div className="w-full max-w-sm bg-white rounded-3xl p-8 shadow-2xl">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+    <main className="relative min-h-screen flex items-center justify-center bg-canvas p-6 overflow-hidden">
+      {/* Soft brand glow behind the card */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[500px] rounded-full bg-gradient-to-b from-blue-200/50 via-indigo-100/40 to-transparent blur-3xl"
+      />
+      <div className="relative w-full max-w-sm">
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/25">
             <GraduationCap className="w-6 h-6" />
           </div>
-          <div>
-            <h1 className="font-bold text-slate-900 text-lg leading-tight">EMP-EDU</h1>
-            <p className="text-[11px] text-blue-600 font-medium">Sign in - instructors, students and admins</p>
-          </div>
+          <h1 className="mt-4 text-xl font-semibold text-slate-900 tracking-tight">Sign in to EMP-EDU</h1>
+          <p className="mt-1 text-[13px] text-slate-500">Instructors, students and admins</p>
         </div>
+      <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
 
         <form onSubmit={submit} className="space-y-4">
           <label className="block">
@@ -68,7 +71,7 @@ export default function LoginPage() {
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
               required
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-hidden focus:border-blue-500"
+              className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:outline-hidden focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
             />
           </label>
           <label className="block">
@@ -79,7 +82,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
               required
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-hidden focus:border-blue-500"
+              className="mt-1.5 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:outline-hidden focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
             />
           </label>
 
@@ -88,19 +91,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-colors disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2 h-10 bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm rounded-lg transition-colors disabled:opacity-60"
           >
             {busy && <Loader2 className="w-4 h-4 animate-spin" />}
             Sign in
           </button>
         </form>
-
-        <Link
-          href="/student"
-          className="mt-5 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600"
-        >
-          <Video className="w-3.5 h-3.5" /> Join as a guest student (no account)
-        </Link>
+      </div>
       </div>
     </main>
   );

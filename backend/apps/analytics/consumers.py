@@ -14,12 +14,13 @@ from apps.courses.models import ClassSession
 from apps.analytics import identity, realtime, screen, snapshots
 from apps.analytics.inference_engine import aget_engine, engine_status, get_engine
 from apps.analytics.models import SessionSnapshot, TeachingSuggestion
-from apps.analytics.services import SmoothingEngine, AggregationService, serialize_suggestion
+from apps.analytics.services import AWAY, SmoothingEngine, AggregationService, serialize_suggestion
 
 User = get_user_model()
 
 MAX_FRAME_CHARS = 400_000      # a 640x480 JPEG is ~30-80 KB; anything larger is not a webcam frame
 MIN_FRAME_INTERVAL = 0.4       # server-side cap of ~2.5 fps per student connection
+AWAY_AFTER_FRAMES = 3          # camera on but no face for this many frames in a row (~2 s): attention 0
 PRESENCE_WINDOW_SECONDS = 20
 MAX_SCREEN_FRAME_CHARS = 2_500_000   # a 1280px-wide JPEG of a video-call window
 MIN_SCREEN_FRAME_INTERVAL = 0.8
@@ -62,6 +63,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
         self.last_frame_at = 0.0
         self.told_no_model = False
         self.told_no_face = False
+        self.missed_faces = 0
         self.last_heartbeat_at = 0.0
 
         await self.accept()
@@ -164,38 +166,34 @@ class StudentConsumer(AsyncWebsocketConsumer):
                         "message": "No AI model is loaded on the server, so no emotion or attention data is "
                                    "produced from your camera. Your instructor sees you as online only.",
                     }))
-            elif not self.told_no_face:
-                self.told_no_face = True
-                await self.send(text_data=json.dumps({
-                    "type": "face.missing",
-                    "message": "No face detected. Face the camera in good lighting so your engagement can be measured.",
-                }))
+            else:
+                if not self.told_no_face:
+                    self.told_no_face = True
+                    await self.send(text_data=json.dumps({
+                        "type": "face.missing",
+                        "message": "No face detected. Face the camera in good lighting so your engagement can be measured.",
+                    }))
+                # Camera on but nobody facing it (looked away, left the desk): counts as no attention
+                self.missed_faces += 1
+                if self.missed_faces >= AWAY_AFTER_FRAMES:
+                    smoothed = await self.smooth_and_save(AWAY, 0.0, 0.0)
+                    if smoothed is None:
+                        await self.session_over()
+                        return
+                    await self.broadcast_update(smoothed, AWAY, 0.0, payload)
             return
         self.told_no_model = False
         self.told_no_face = False
-        timestamp = payload.get('timestamp') or int(time.time() * 1000)
+        self.missed_faces = 0
 
         smoothed = await self.smooth_and_save(result['emotion'], result['attention'], result['confidence'])
         if smoothed is None:
-            await self.send(text_data=json.dumps({"type": "error", "code": CLOSE_SESSION_NOT_LIVE,
-                                                  "message": "This class session has ended."}))
-            await self.close(code=CLOSE_SESSION_NOT_LIVE)
+            await self.session_over()
             return
         await self.maybe_store_snapshot(result)
         await self.maybe_store_reference(result)
 
-        await self.channel_layer.group_send(self.group_name, {
-            "type": "broadcast_student_update",
-            "student_update": {
-                "student_id": self.user.id,
-                "name": display_name(self.user),
-                "emotion": smoothed['emotion'],
-                "raw_emotion": result['emotion'],
-                "attention": smoothed['attention'],
-                "confidence": result['confidence'],
-                "timestamp": timestamp,
-            },
-        })
+        await self.broadcast_update(smoothed, result['emotion'], result['confidence'], payload)
         await self.send(text_data=json.dumps({
             "type": "telemetry",
             "emotion": smoothed['emotion'],
@@ -207,6 +205,25 @@ class StudentConsumer(AsyncWebsocketConsumer):
         }))
 
     # ------------------------------------------------------------------ helpers
+
+    async def session_over(self):
+        await self.send(text_data=json.dumps({"type": "error", "code": CLOSE_SESSION_NOT_LIVE,
+                                              "message": "This class session has ended."}))
+        await self.close(code=CLOSE_SESSION_NOT_LIVE)
+
+    async def broadcast_update(self, smoothed, raw_emotion, confidence, payload):
+        await self.channel_layer.group_send(self.group_name, {
+            "type": "broadcast_student_update",
+            "student_update": {
+                "student_id": self.user.id,
+                "name": display_name(self.user),
+                "emotion": smoothed['emotion'],
+                "raw_emotion": raw_emotion,
+                "attention": smoothed['attention'],
+                "confidence": confidence,
+                "timestamp": payload.get('timestamp') or int(time.time() * 1000),
+            },
+        })
 
     @database_sync_to_async
     def resolve_identity(self):
