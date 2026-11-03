@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import timedelta
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from asgiref.sync import async_to_sync
@@ -15,13 +16,16 @@ AWAY = ''
 
 class SmoothingEngine:
     """
-    Smooths predictions over a 10-second rolling window per student (or per screen
+    Smooths predictions over a rolling window (default 3 seconds) per student (or per screen
     participant when `student` is None). Majority vote for emotion, mean for attention.
     """
-    @staticmethod
-    def smooth(session, student, current_raw_emotion, current_raw_attention, current_confidence, participant=''):
+    WINDOW_SECONDS = getattr(settings, 'SMOOTHING_WINDOW_SECONDS', 3)
+
+    @classmethod
+    def smooth(cls, session, student, current_raw_emotion, current_raw_attention, current_confidence, participant=''):
         now = timezone.now()
-        window_start = now - timedelta(seconds=10)
+        window_seconds = getattr(settings, 'SMOOTHING_WINDOW_SECONDS', cls.WINDOW_SECONDS)
+        window_start = now - timedelta(seconds=window_seconds)
 
         who = {'student': student} if student is not None else {'student__isnull': True, 'participant': participant}
         recent_predictions = list(

@@ -108,7 +108,10 @@ class EmotionModel:
             import cv2
             import onnxruntime as ort
             self.detector = cv2.FaceDetectorYN.create(detector_path, "", (320, 320), FACE_SCORE_THRESHOLD, 0.3, 50)
-            session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+            sess_opts = ort.SessionOptions()
+            sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            sess_opts.intra_op_num_threads = max(1, min(4, (os.cpu_count() or 4) // 2))
+            session = ort.InferenceSession(model_path, sess_opts, providers=['CPUExecutionProvider'])
             self.input_name = session.get_inputs()[0].name
             n_out = session.get_outputs()[0].shape[-1]
             if not self.ferplus and isinstance(n_out, int) and n_out != len(self.metadata['classes']):

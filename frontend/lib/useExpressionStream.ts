@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { wsBase } from './config';
 import type { EmotionType } from './emotions';
 
-const FRAME_INTERVAL_MS = 700; // ~1.4 fps
+const FRAME_INTERVAL_MS = 350; // ~2.8 fps for responsive detection
 const HEARTBEAT_MS = 10_000; // "still in the class" while no frames are sent (camera off)
-const MAX_FRAME_WIDTH = 640;
+const MAX_FRAME_WIDTH = 480;
 
 export interface ExpressionState {
   status: 'off' | 'connecting' | 'on' | 'error';
@@ -83,7 +83,7 @@ export function useExpressionStream(sessionId: number | null, track: MediaStream
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      ws.send(JSON.stringify({ type: 'frame', image: canvas.toDataURL('image/jpeg', 0.8), timestamp: Date.now() }));
+      ws.send(JSON.stringify({ type: 'frame', image: canvas.toDataURL('image/jpeg', 0.7), timestamp: Date.now() }));
     }, FRAME_INTERVAL_MS);
     return () => {
       clearInterval(timer);

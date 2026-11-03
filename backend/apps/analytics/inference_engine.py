@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 
+import cv2
 import numpy as np
 from django.conf import settings
 from PIL import Image
@@ -115,9 +116,8 @@ class InferenceEngine:
             crop = self.emotion_model.face_crop(frame_bgr, box)
             if crop is None:
                 return None
-            buf = io.BytesIO()
-            Image.fromarray(np.ascontiguousarray(crop[:, :, ::-1])).save(buf, format='JPEG', quality=90)
-            return buf.getvalue()
+            success, buf = cv2.imencode('.jpg', crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            return buf.tobytes() if success else None
         except Exception:
             return None
 
@@ -125,8 +125,9 @@ class InferenceEngine:
     def _decode(data_url):
         try:
             b64 = data_url.split(',', 1)[1] if ',' in data_url else data_url
-            img = Image.open(io.BytesIO(base64.b64decode(b64))).convert('RGB')
-            return np.ascontiguousarray(np.array(img)[:, :, ::-1])
+            raw = base64.b64decode(b64)
+            arr = np.frombuffer(raw, dtype=np.uint8)
+            return cv2.imdecode(arr, cv2.IMREAD_COLOR)
         except Exception:
             return None
 
@@ -179,11 +180,14 @@ class InferenceEngine:
         if crop.size == 0:
             return None
         try:
-            img = Image.fromarray(np.ascontiguousarray(crop[:, :, ::-1]))
-            img.thumbnail((SCREEN_THUMB_PX, SCREEN_THUMB_PX))
-            buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=70)
-            return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+            ch, cw = crop.shape[:2]
+            scale = min(SCREEN_THUMB_PX / cw, SCREEN_THUMB_PX / ch)
+            nw, nh = max(1, int(cw * scale)), max(1, int(ch * scale))
+            resized = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA)
+            success, buf = cv2.imencode('.jpg', resized, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            if not success:
+                return None
+            return 'data:image/jpeg;base64,' + base64.b64encode(buf).decode('ascii')
         except Exception:
             return None
 
@@ -195,11 +199,14 @@ class InferenceEngine:
     def _preview(frame_bgr):
         """Small JPEG of the frame for the instructor's live tile. Kept in memory only, never stored."""
         try:
-            img = Image.fromarray(np.ascontiguousarray(frame_bgr[:, :, ::-1]))
-            img.thumbnail(PREVIEW_SIZE)
-            buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=PREVIEW_QUALITY)
-            return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+            h, w = frame_bgr.shape[:2]
+            scale = min(PREVIEW_SIZE[0] / w, PREVIEW_SIZE[1] / h)
+            nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+            resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+            success, buf = cv2.imencode('.jpg', resized, [int(cv2.IMWRITE_JPEG_QUALITY), PREVIEW_QUALITY])
+            if not success:
+                return None
+            return 'data:image/jpeg;base64,' + base64.b64encode(buf).decode('ascii')
         except Exception:
             return None
 

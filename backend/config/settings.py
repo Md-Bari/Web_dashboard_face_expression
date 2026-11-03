@@ -227,6 +227,11 @@ MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
 EXPRESSION_SNAPSHOTS_ENABLED = os.environ.get('EXPRESSION_SNAPSHOTS_ENABLED', 'True') == 'True'
 # Ignore low-confidence predictions so a misread cannot take a student's only slot for that class
 EXPRESSION_SNAPSHOT_MIN_CONFIDENCE = float(os.environ.get('EXPRESSION_SNAPSHOT_MIN_CONFIDENCE', '0.5'))
+# Rolling window for emotion and attention smoothing (in seconds).
+# 3 seconds provides fast, responsive detection (~1.2s to flip expression) while filtering 1-frame noise.
+# Rolling window for emotion and attention smoothing (in seconds).
+# Specification defaults to 10 seconds. Set to 3-4s in .env for faster, responsive emotion flips.
+SMOOTHING_WINDOW_SECONDS = int(os.environ.get('SMOOTHING_WINDOW_SECONDS', '10'))
 # FACE_RECOGNITION_ENABLED: name the faces in the instructor's shared screen after enrolled
 # students (needs models/face_recognition_sface_2021dec.onnx). Keeps 128-number face templates
 # of consenting students (no images); withdrawing consent deletes them.

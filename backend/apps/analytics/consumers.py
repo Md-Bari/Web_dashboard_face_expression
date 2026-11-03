@@ -19,7 +19,7 @@ from apps.analytics.services import AWAY, SmoothingEngine, AggregationService, s
 User = get_user_model()
 
 MAX_FRAME_CHARS = 400_000      # a 640x480 JPEG is ~30-80 KB; anything larger is not a webcam frame
-MIN_FRAME_INTERVAL = 0.4       # server-side cap of ~2.5 fps per student connection
+MIN_FRAME_INTERVAL = 0.25      # server-side cap of ~4 fps per student connection
 AWAY_AFTER_FRAMES = 3          # camera on but no face for this many frames in a row (~2 s): attention 0
 PRESENCE_WINDOW_SECONDS = 20
 MAX_SCREEN_FRAME_CHARS = 2_500_000   # a 1280px-wide JPEG of a video-call window
