@@ -193,7 +193,7 @@ export default function DashboardPage() {
   const ended = session?.status === 'ENDED';
 
   return (
-    <div className="flex min-h-screen bg-canvas text-slate-800">
+    <div className="min-h-screen bg-canvas text-slate-800">
       <Sidebar
         currentTab={tab}
         onTabChange={setTab}
@@ -202,7 +202,7 @@ export default function DashboardPage() {
         onMobileClose={() => setMenuOpen(false)}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="lg:pl-60 flex-1 flex flex-col min-w-0 min-h-screen">
         <Header title={tab} onMenuClick={() => setMenuOpen(true)} />
 
         <main className="px-4 py-5 md:px-6 md:py-6 space-y-5 max-w-[1600px] w-full mx-auto">

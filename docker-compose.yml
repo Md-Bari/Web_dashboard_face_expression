@@ -17,7 +17,9 @@ services:
       test: ["CMD-SHELL", "pg_isready -U emp_edu_user -d emp_edu_db"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      # First start initialises the database, which can take a while on a slow disk
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -62,6 +64,12 @@ services:
       - LIVEKIT_URL=${LIVEKIT_URL:-}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      # Class features (see .env)
+      - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-False}
+      - SESSION_MAX_HOURS=${SESSION_MAX_HOURS:-4}
+      - EXPRESSION_SNAPSHOTS_ENABLED=${EXPRESSION_SNAPSHOTS_ENABLED:-True}
+      - EXPRESSION_SNAPSHOT_MIN_CONFIDENCE=${EXPRESSION_SNAPSHOT_MIN_CONFIDENCE:-0.5}
+      - FACE_RECOGNITION_ENABLED=${FACE_RECOGNITION_ENABLED:-True}
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,6 +92,8 @@ services:
       - LIVEKIT_URL=${LIVEKIT_URL:-}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      # Forgotten live sessions are ended after this many hours
+      - SESSION_MAX_HOURS=${SESSION_MAX_HOURS:-4}
       - POSTGRES_DB=emp_edu_db
       - POSTGRES_USER=emp_edu_user
       - POSTGRES_PASSWORD=emp_edu_password

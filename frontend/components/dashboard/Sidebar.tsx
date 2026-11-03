@@ -91,9 +91,10 @@ export function Sidebar({ currentTab, onTabChange, onSessionEnded, mobileOpen = 
     {/* Phone/tablet: dim the page behind the open drawer; tapping it closes the drawer */}
     {mobileOpen && <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40 lg:hidden" onClick={onMobileClose} aria-hidden="true" />}
     <aside
-      className={`w-60 bg-[#0B1528] text-slate-300 flex flex-col h-dvh overflow-y-auto border-r border-[#1B294B] shrink-0 select-none
-        fixed inset-y-0 left-0 z-50 transition-transform duration-200 ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
-        lg:sticky lg:top-0 lg:self-start lg:translate-x-0 lg:z-auto lg:h-screen`}
+      className={`w-60 bg-[#0B1528] text-slate-300 flex flex-col h-screen overflow-y-auto border-r border-[#1B294B] shrink-0 select-none
+        fixed inset-y-0 left-0 z-40 transition-transform duration-200
+        ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+        lg:translate-x-0 lg:shadow-none`}
     >
       {/* Brand */}
       <div className="h-14 px-4 flex items-center gap-3 border-b border-[#1B294B]/60 shrink-0">
