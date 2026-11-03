@@ -16,6 +16,15 @@ DEFAULT_METADATA = {
 
 FACE_SCORE_THRESHOLD = 0.6
 
+# Pretrained fallback used only while no expression model of your own is in models/:
+# Microsoft FER+ (ONNX Model Zoo, MIT). Input [1,1,64,64] grayscale 0-255, output 8 logits.
+# Its disgust/contempt classes have no counterpart here and are left out of the softmax.
+FERPLUS_FILE = 'emotion-ferplus-8.onnx'
+FERPLUS_OUTPUTS = ['neutral', 'happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear', 'contempt']
+FERPLUS_NAMES = {'angry': 'anger', 'fear': 'fear', 'happy': 'happiness',
+                 'neutral': 'neutral', 'sad': 'sadness', 'surprise': 'surprise'}
+FERPLUS_SIZE = 64
+
 
 class EmotionModel:
     """
@@ -30,6 +39,9 @@ class EmotionModel:
     Optional: SFace (OpenCV FaceRecognizerSF, `face_recognizer`) turns an aligned face into a
     128-number identity embedding, used to recognise students in a shared screen.
 
+    When no expression model of your own is present, the pretrained FER+ model
+    (emotion-ferplus-8.onnx) is used instead if it is in models/.
+
     Nothing is predicted when a model file is missing or no face is found.
     """
 
@@ -42,6 +54,8 @@ class EmotionModel:
         self.recognizer = None
         self.model_name = "No model loaded"
         self.input_name = None
+        self.ferplus = False  # True while the FER+ fallback is the classifier
+        self.ferplus_index = None
         self.metadata = dict(DEFAULT_METADATA)
         self._detector_lock = threading.Lock()  # cv2.FaceDetectorYN is not thread-safe
         self._recognizer_lock = threading.Lock()  # neither is cv2.FaceRecognizerSF
@@ -62,6 +76,7 @@ class EmotionModel:
         self.session = None
         self.detector = None
         self.recognizer = None
+        self.ferplus = False
         self.model_name = "No model loaded"
         self.metadata = self._read_metadata()
 
@@ -70,8 +85,17 @@ class EmotionModel:
         recognizer_file = self.metadata['face_recognizer']
         classifier_files = sorted(
             f for f in glob.glob(os.path.join(self.models_dir, '*.onnx'))
-            if os.path.basename(f) not in (detector_file, recognizer_file)
+            if os.path.basename(f) not in (detector_file, recognizer_file, FERPLUS_FILE)
         )
+        ferplus_path = os.path.join(self.models_dir, FERPLUS_FILE)
+        if not classifier_files and os.path.exists(ferplus_path):
+            missing = [c for c in self.metadata['classes'] if c.lower() not in FERPLUS_NAMES]
+            if missing:
+                print(f"[Inference] FER+ has no class for {missing}. Emotion predictions are disabled.")
+                return
+            classifier_files = [ferplus_path]
+            self.ferplus = True
+            self.ferplus_index = [FERPLUS_OUTPUTS.index(FERPLUS_NAMES[c.lower()]) for c in self.metadata['classes']]
         if not classifier_files:
             print("[Inference] No expression .onnx model in models/. Emotion predictions are disabled.")
             return
@@ -87,17 +111,18 @@ class EmotionModel:
             session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
             self.input_name = session.get_inputs()[0].name
             n_out = session.get_outputs()[0].shape[-1]
-            if isinstance(n_out, int) and n_out != len(self.metadata['classes']):
+            if not self.ferplus and isinstance(n_out, int) and n_out != len(self.metadata['classes']):
                 print(f"[Inference] {os.path.basename(model_path)} has {n_out} outputs but metadata lists "
                       f"{len(self.metadata['classes'])} classes. Emotion predictions are disabled.")
                 self.detector = None
                 return
             self.session = session
-            self.model_name = os.path.basename(model_path)
+            self.model_name = os.path.basename(model_path) + (' (pretrained fallback)' if self.ferplus else '')
             print(f"[Inference] Loaded {self.model_name} ({', '.join(self.metadata['classes'])}) "
                   f"with face detector {detector_file}")
         except Exception as e:
             self.detector = None
+            self.ferplus = False
             print(f"[Inference] Failed to load models from {self.models_dir}: {e}")
             return
 
@@ -156,11 +181,24 @@ class EmotionModel:
         crop = self.face_crop(frame_bgr, box)
         if crop is None:
             return None
+        if self.ferplus:
+            import cv2
+            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            gray = cv2.resize(gray, (FERPLUS_SIZE, FERPLUS_SIZE), interpolation=cv2.INTER_AREA)
+            return gray.astype(np.float32)[None, :, :]  # [1,64,64], raw 0-255 as FER+ was trained
         rgb = crop[:, :, ::-1].astype(np.float32) / 255.0
         return np.transpose(rgb, (2, 0, 1))
 
     def _classify(self, batch):
         """[N,3,S,S] -> [N, classes] probabilities."""
+        if self.ferplus:
+            # The FER+ graph has a fixed batch of 1; keep only the classes this app uses
+            logits = np.stack([
+                self.session.run(None, {self.input_name: np.ascontiguousarray(x[None])})[0][0]
+                for x in batch
+            ]).astype(np.float64)[:, self.ferplus_index]
+            probs = np.exp(logits - logits.max(axis=1, keepdims=True))
+            return probs / probs.sum(axis=1, keepdims=True)
         probs = self.session.run(None, {self.input_name: np.ascontiguousarray(batch)})[0].astype(np.float64)
         if self.metadata.get('output') != 'probabilities':
             probs = np.exp(probs - probs.max(axis=1, keepdims=True))
@@ -169,6 +207,9 @@ class EmotionModel:
 
     def warmup(self):
         if self.session is None:
+            return
+        if self.ferplus:
+            self._classify(np.zeros((1, 1, FERPLUS_SIZE, FERPLUS_SIZE), dtype=np.float32))
             return
         size = int(self.metadata.get('image_size', 256))
         self._classify(np.zeros((1, 3, size, size), dtype=np.float32))
