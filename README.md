@@ -239,17 +239,26 @@ channel layer, and aggregates snapshots inside the ASGI process.
 
 | File | Purpose |
 | --- | --- |
-| `yolo_face_expression_ensemble.onnx` | 5-fold YOLO11m expression classifier, input `[N,3,256,256]` RGB 0-1, output probabilities |
+| `yolov8m_face_expression.onnx` | YOLOv8m expression classifier, input `[N,3,256,256]` RGB 0-1, output probabilities; face crops are converted to grayscale and replicated across RGB channels |
 | `face_detection_yunet_2023mar.onnx` | YuNet face detector (OpenCV `FaceDetectorYN`) |
 | `face_recognition_sface_2021dec.onnx` | Optional SFace recogniser (OpenCV `FaceRecognizerSF`) that names screen faces; download from the [OpenCV model zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface). Without it, screen faces stay anonymous until named by hand |
 | `deployment_metadata.json` | Classes, image size, face margin and detector file name used by the loader |
 
 Pipeline (`backend/inference/model_loader.py`): detect the largest face, grow the box by `face_margin`,
-resize the short side to `image_size`, centre crop, classify. The dashboard uses the model's six classes
+resize the short side to `image_size`, centre crop, then convert to grayscale and classify as RGB.
+The dashboard uses the model's six classes
 directly - **Happy, Surprise, Neutral, Fear, Sad, Angry** - in tiles, the distribution donut, the trend,
 filters, reports and CSV (defined once in `backend/apps/analytics/emotions.py` and `frontend/lib/emotions.ts`).
 Teaching suggestions fire on sad + fear >= 20%, angry >= 15%, surprise >= 25%, neutral >= 50%, or low
 attention. Attention comes from head yaw/pitch measured on the YuNet landmarks (`gaze_tracker.py`).
+
+**Eye movement analysis** (`backend/inference/eye_movement.py`, shown on the Eye Tracking page): each
+webcam frame gives a gaze direction (head direction plus the iris position found as the darkest blob in each
+eye patch) and an eyes-open/closed reading (round iris vs. thin lash line). Per student, a one-minute sliding
+window in memory yields: time looking at the screen, fixations (dispersion-threshold identification, I-DT),
+mean fixation duration, gaze shifts per minute, eye closures per minute and prolonged closures (>= 1 s, a
+drowsiness sign). Nothing is stored. At ~3 fps and <= 640 px these are coarse measures: true saccades and
+pupil size need a dedicated (infrared, 60 Hz+) eye tracker such as those PyGaze drives.
 
 The engine rescans this directory every few seconds, so replaced model files are picked up without a
 restart. If a model file is missing, no emotion or attention data is produced at all.
@@ -270,4 +279,3 @@ Tests verify:
 - 10-second rolling window smoothing
 - WebSocket auth (instructor-only dashboard socket, student consent gate, frame ingestion)
 - Per-instructor isolation of analytics, reports and session start/end
-

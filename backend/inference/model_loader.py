@@ -9,12 +9,14 @@ DEFAULT_METADATA = {
     'classes': ['angry', 'fear', 'happy', 'neutral', 'sad', 'surprise'],
     'image_size': 256,
     'output': 'probabilities',
+    'grayscale_input': False,
     'face_detector': 'face_detection_yunet_2023mar.onnx',
     'face_margin': 0.2,
     'face_recognizer': 'face_recognition_sface_2021dec.onnx',
 }
 
 FACE_SCORE_THRESHOLD = 0.6
+PREFERRED_EXPRESSION_MODEL = 'yolov8m_face_expression.onnx'
 
 # Pretrained fallback used only while no expression model of your own is in models/:
 # Microsoft FER+ (ONNX Model Zoo, MIT). Input [1,1,64,64] grayscale 0-255, output 8 logits.
@@ -33,7 +35,7 @@ class EmotionModel:
       1. YuNet (OpenCV FaceDetectorYN) finds the faces in the frame.
       2. The face box is grown by `face_margin`, cropped, its short side resized to
          `image_size` and centre cropped.
-      3. The ONNX expression ensemble returns probabilities for the six classes
+      3. The ONNX expression classifier returns probabilities for the six classes
          (angry, fear, happy, neutral, sad, surprise); the top class is the prediction.
 
     Optional: SFace (OpenCV FaceRecognizerSF, `face_recognizer`) turns an aligned face into a
@@ -87,6 +89,9 @@ class EmotionModel:
             f for f in glob.glob(os.path.join(self.models_dir, '*.onnx'))
             if os.path.basename(f) not in (detector_file, recognizer_file, FERPLUS_FILE)
         )
+        preferred_model = os.path.join(self.models_dir, PREFERRED_EXPRESSION_MODEL)
+        if preferred_model in classifier_files:
+            classifier_files = [preferred_model]
         ferplus_path = os.path.join(self.models_dir, FERPLUS_FILE)
         if not classifier_files and os.path.exists(ferplus_path):
             missing = [c for c in self.metadata['classes'] if c.lower() not in FERPLUS_NAMES]
@@ -158,8 +163,8 @@ class EmotionModel:
         found.sort(key=lambda f: f[2] * f[3], reverse=True)
         return found[:max_faces]
 
-    def face_crop(self, frame_bgr, box):
-        """The face exactly as the classifier sees it: margin, short side -> image_size, centre crop (BGR uint8)."""
+    def face_crop(self, frame_bgr, box, grayscale=False):
+        """Crop and resize a face, optionally converting to grayscale before resizing."""
         import cv2
         x, y, fw, fh = box
         margin = float(self.metadata.get('face_margin', 0.2))
@@ -171,6 +176,8 @@ class EmotionModel:
         crop = frame_bgr[y0:y1, x0:x1]
         if crop.size == 0:
             return None
+        if grayscale:
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
 
         size = int(self.metadata.get('image_size', 256))
         ch, cw = crop.shape[:2]
@@ -179,16 +186,19 @@ class EmotionModel:
         crop = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
         top, left = (nh - size) // 2, (nw - size) // 2
         return crop[top:top + size, left:left + size]
-
     def _preprocess(self, frame_bgr, box):
-        crop = self.face_crop(frame_bgr, box)
+        grayscale = self.ferplus or self.metadata.get('grayscale_input', False)
+        crop = self.face_crop(frame_bgr, box, grayscale=grayscale)
         if crop is None:
             return None
         if self.ferplus:
             import cv2
-            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-            gray = cv2.resize(gray, (FERPLUS_SIZE, FERPLUS_SIZE), interpolation=cv2.INTER_AREA)
+            gray = cv2.resize(crop, (FERPLUS_SIZE, FERPLUS_SIZE), interpolation=cv2.INTER_AREA)
             return gray.astype(np.float32)[None, :, :]  # [1,64,64], raw 0-255 as FER+ was trained
+        if grayscale:
+            gray = crop.astype(np.float32) / 255.0
+            # The classifier expects RGB channels; replicate grayscale into an RGB tensor.
+            return np.broadcast_to(gray[None, :, :], (3, *gray.shape))
         rgb = crop[:, :, ::-1].astype(np.float32) / 255.0
         return np.transpose(rgb, (2, 0, 1))
 

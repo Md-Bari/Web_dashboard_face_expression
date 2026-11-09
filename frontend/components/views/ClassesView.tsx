@@ -1,13 +1,29 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, Copy, Link2, Loader2, Pencil, Play, Plus, Trash2, Users, X } from 'lucide-react';
+import {
+  BookOpen,
+  Check,
+  ChevronRight,
+  Copy,
+  GraduationCap,
+  Layers3,
+  Link2,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Sparkles,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useDashboardStore } from '@/lib/store';
 import { copyText, inviteLink } from '@/lib/clipboard';
 import { closePendingTab, openPendingTab, showMeeting } from '@/lib/classTab';
 import type { CourseInfo, SectionInfo } from '@/lib/types';
-import { Card, PageTitle } from './ui';
+import { Card } from './ui';
 
 const input = 'rounded-xl border border-slate-200 px-3 py-2 text-xs focus:outline-hidden focus:border-blue-500';
 const primary =
@@ -60,34 +76,113 @@ export function ClassesView({ onOpenSession }: { onOpenSession?: (id: number) =>
   };
 
   const selected = courses?.find((c) => c.id === selectedId) ?? null;
+  const sectionCount = courses?.reduce((total, course) => total + (course.sections?.length ?? 0), 0) ?? 0;
+  const studentCount = courses?.reduce((total, course) => total + course.total_students, 0) ?? 0;
 
   return (
     <div className="space-y-4">
-      <PageTitle title="Classes" subtitle="Your classes, their sections and the students in each section" />
-      {error && <p className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-xl p-3">{error}</p>}
+      <header className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-6">
+        <div className="pointer-events-none absolute -right-10 -top-20 h-52 w-52 rounded-full bg-blue-100/50 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3.5">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/20">
+              <GraduationCap className="h-6 w-6" />
+            </span>
+            <div className="pt-0.5">
+              <p className="mb-1 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">
+                <Sparkles className="h-3 w-3" /> Teaching workspace
+              </p>
+              <h1 className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">Your classes</h1>
+              <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-600 sm:text-sm">
+                Organize your courses, manage sections, and get your next class ready to go.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 sm:min-w-[330px]">
+            {[
+              { label: 'Courses', value: courses === null ? '—' : courses.length, icon: BookOpen },
+              { label: 'Sections', value: courses === null ? '—' : sectionCount, icon: Layers3 },
+              { label: 'Students', value: courses === null ? '—' : studentCount, icon: Users },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="rounded-xl border border-white/90 bg-white/80 px-3 py-2.5 shadow-sm backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500 sm:text-[11px]">
+                  <Icon className="h-3.5 w-3.5 text-blue-600" />
+                  {label}
+                </div>
+                <p className="mt-1 text-lg font-bold leading-none tabular-nums text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {error && (
+        <p role="alert" className="rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+          {error}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-4 space-y-4">
-          <Card title="Your classes">
+          <Card
+            title="Course library"
+            subtitle="Choose a course to manage its sections"
+            action={
+              <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                {courses === null ? 'Loading…' : `${courses.length} ${courses.length === 1 ? 'course' : 'courses'}`}
+              </span>
+            }
+            className="h-full"
+          >
             {courses === null ? (
-              <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+              <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> Loading your courses…
+              </div>
             ) : courses.length === 0 ? (
-              <p className="text-xs text-slate-500">No classes yet. Create your first one below.</p>
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-center">
+                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-500 shadow-sm">
+                  <BookOpen className="h-5 w-5" />
+                </span>
+                <p className="mt-3 text-sm font-semibold text-slate-800">Your course list is empty</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">Create your first class below to get started.</p>
+              </div>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {courses.map((c) => (
                   <li key={c.id}>
                     <button
                       onClick={() => setSelectedId(c.id)}
-                      className={`w-full text-left px-3 py-2.5 rounded-xl border transition-colors ${
-                        c.id === selectedId ? 'border-blue-400 bg-blue-50/60' : 'border-slate-100 hover:bg-slate-50'
+                      aria-pressed={c.id === selectedId}
+                      className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all duration-200 ${
+                        c.id === selectedId
+                          ? 'border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50/70 shadow-sm shadow-blue-900/5'
+                          : 'border-slate-100 bg-white hover:border-blue-100 hover:bg-slate-50/70'
                       }`}
                     >
-                      <p className="text-sm font-semibold text-slate-900 truncate">{c.title}</p>
-                      <p className="text-[11px] text-slate-500">
-                        {c.code} · {c.sections?.length ?? 0} section{c.sections?.length === 1 ? '' : 's'} · {c.total_students}{' '}
-                        student{c.total_students === 1 ? '' : 's'}
-                      </p>
+                      <span
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
+                          c.id === selectedId ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20' : 'bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {c.title.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-semibold text-slate-900">{c.title}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500">
+                          <span className="font-medium text-slate-600">{c.code}</span>
+                          <span className="h-1 w-1 rounded-full bg-slate-300" />
+                          <span>{c.sections?.length ?? 0} sections</span>
+                          <span className="h-1 w-1 rounded-full bg-slate-300" />
+                          <span>{c.total_students} students</span>
+                        </span>
+                      </span>
+                      <ChevronRight
+                        className={`h-4 w-4 shrink-0 transition-transform ${
+                          c.id === selectedId ? 'translate-x-0.5 text-blue-600' : 'text-slate-300 group-hover:translate-x-0.5 group-hover:text-slate-500'
+                        }`}
+                      />
                     </button>
                   </li>
                 ))}
@@ -95,28 +190,52 @@ export function ClassesView({ onOpenSession }: { onOpenSession?: (id: number) =>
             )}
           </Card>
 
-          <Card title="New class">
+          <Card
+            title="Create a class"
+            subtitle="Add a course to your teaching space"
+            action={
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <Plus className="h-4 w-4" />
+              </span>
+            }
+          >
             <form onSubmit={createClass} className="space-y-2">
+              <label htmlFor="new-class-code" className="block text-[11px] font-semibold text-slate-700">
+                Course code
+              </label>
               <input
+                id="new-class-code"
                 value={newClass.code}
                 onChange={(e) => setNewClass((v) => ({ ...v, code: e.target.value }))}
-                placeholder="Code, e.g. CSE-2024"
+                placeholder="e.g. CSE-2024"
                 required
                 maxLength={50}
-                className={`${input} w-full`}
+                className={`${input} w-full bg-slate-50/70 placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10`}
               />
+              <label htmlFor="new-class-title" className="block pt-1 text-[11px] font-semibold text-slate-700">
+                Course name
+              </label>
               <input
+                id="new-class-title"
                 value={newClass.title}
                 onChange={(e) => setNewClass((v) => ({ ...v, title: e.target.value }))}
-                placeholder="Name, e.g. Data Structures"
+                placeholder="e.g. Data Structures"
                 required
                 maxLength={200}
-                className={`${input} w-full`}
+                className={`${input} w-full bg-slate-50/70 placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10`}
               />
-              <button type="submit" disabled={creating} className={`${primary} w-full`}>
-                {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create class
+              <button
+                type="submit"
+                disabled={creating}
+                className={`${primary} mt-1 w-full rounded-xl py-2.5 shadow-sm shadow-blue-600/15 transition-all hover:-translate-y-px hover:shadow-md`}
+              >
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                {creating ? 'Creating class…' : 'Create class'}
               </button>
-              <p className="text-[11px] text-slate-400">A new class starts with section A; add more sections any time.</p>
+              <p className="flex items-start gap-1.5 pt-1 text-[10px] leading-relaxed text-slate-500">
+                <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                We’ll create your first section automatically. You can add more whenever you need them.
+              </p>
             </form>
           </Card>
         </div>
@@ -126,8 +245,20 @@ export function ClassesView({ onOpenSession }: { onOpenSession?: (id: number) =>
             <ClassDetail key={selected.id} course={selected} onChanged={changed} onOpenSession={onOpenSession} />
           ) : (
             courses && (
-              <Card>
-                <p className="py-10 text-center text-xs text-slate-500">Create or pick a class.</p>
+              <Card className="flex min-h-[300px] items-center justify-center bg-gradient-to-br from-white to-slate-50/70">
+                <div className="max-w-sm text-center">
+                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 ring-8 ring-blue-50/50">
+                    <GraduationCap className="h-7 w-7" />
+                  </span>
+                  <h2 className="mt-5 text-base font-semibold text-slate-900">
+                    {courses.length ? 'Choose a course to get started' : 'Your next class starts here'}
+                  </h2>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+                    {courses.length
+                      ? 'Select a course from your library to manage sections, invite students, and start a session.'
+                      : 'Create your first course and we’ll help you set up its sections and student invite links.'}
+                  </p>
+                </div>
               </Card>
             )
           )}
@@ -340,9 +471,18 @@ function ClassDetail({
   };
 
   return (
-    <Card title="Create Meeting Link" subtitle="Choose a section to get the link its students join with">
-      <label htmlFor="section-pick" className="text-xs font-semibold text-slate-700">
-        Section
+    <Card
+      title="Meeting & invite link"
+      subtitle={`Choose a section in ${course.title} to share access or start a class`}
+      action={
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+          <Link2 className="h-4 w-4" />
+        </span>
+      }
+      className="h-full"
+    >
+      <label htmlFor="section-pick" className="block text-[11px] font-semibold text-slate-700">
+        Choose a section
       </label>
       <select
         id="section-pick"
@@ -353,7 +493,7 @@ function ClassDetail({
           setError(null);
           setNotice(null);
         }}
-        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-hidden focus:border-blue-500"
+        className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:bg-white focus:outline-hidden focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
       >
         <option value="" disabled>
           Choose a section
@@ -365,6 +505,9 @@ function ClassDetail({
         ))}
         <option value="new">+ New section…</option>
       </select>
+      <p className="mt-1.5 text-[10px] text-slate-500">
+        Each section has its own student invite link and class roster.
+      </p>
 
       {error && <p className="mt-3 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-xl p-2.5">{error}</p>}
       {notice && <p className="mt-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl p-2.5">{notice}</p>}
@@ -436,11 +579,19 @@ function ClassDetail({
         )}
 
         {selected === null && (
-          <p className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-xs text-slate-500">
-            {sections.length
-              ? 'Choose a section above to see its invite link.'
-              : 'This class has no sections yet. Choose "+ New section" to add one.'}
-          </p>
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-gradient-to-br from-slate-50/80 to-white px-5 py-8 text-center">
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-white text-blue-500 shadow-sm ring-1 ring-slate-100">
+              <Link2 className="h-5 w-5" />
+            </span>
+            <p className="mt-3 text-sm font-semibold text-slate-800">
+              {sections.length ? 'Your section link is one step away' : 'Set up your first section'}
+            </p>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-500">
+              {sections.length
+                ? 'Select a section above to copy its invite link, manage students, or start a class meeting.'
+                : 'Choose “+ New section” above to create a section and generate a dedicated student invite link.'}
+            </p>
+          </div>
         )}
       </div>
     </Card>

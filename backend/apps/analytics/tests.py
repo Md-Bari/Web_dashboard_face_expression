@@ -481,6 +481,30 @@ class ExpressionPhotoGalleryTestCase(TestCase):
 FRONTAL = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
 
 
+class EmotionPreprocessingTestCase(TestCase):
+    def test_grayscale_classifier_input_is_rgb_tensor(self):
+        import numpy as np
+        import cv2
+        from model_loader import EmotionModel
+
+        model = object.__new__(EmotionModel)
+        model.ferplus = False
+        model.metadata = {'grayscale_input': True, 'face_margin': 0, 'image_size': 2}
+        frame = np.array(
+            [[[0, 0, 255], [255, 0, 0]], [[0, 255, 0], [100, 100, 100]]],
+            dtype=np.uint8,
+        )
+
+        tensor = model._preprocess(frame, (0, 0, 2, 2))
+        expected_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+
+        self.assertEqual(tensor.shape, (3, 2, 2))
+        self.assertEqual(tensor.dtype, np.float32)
+        np.testing.assert_allclose(tensor[0], expected_gray)
+        np.testing.assert_array_equal(tensor[0], tensor[1])
+        np.testing.assert_array_equal(tensor[1], tensor[2])
+
+
 class FaceFilterTestCase(TestCase):
     def detection(self, landmarks, box=(20, 30, 72, 80)):
         import numpy as np

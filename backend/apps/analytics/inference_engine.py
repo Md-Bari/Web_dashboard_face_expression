@@ -30,6 +30,7 @@ if INFERENCE_DIR not in sys.path:
 
 from model_loader import EmotionModel  # noqa: E402
 from gaze_tracker import GazeTracker  # noqa: E402
+from eye_movement import measure_eyes  # noqa: E402
 
 RESCAN_SECONDS = 5
 SCREEN_MAX_FACES = 49       # a full 7x7 Meet/Zoom gallery
@@ -94,6 +95,11 @@ class InferenceEngine:
         if prediction is None:
             return None
         attention = self.gaze.estimate_attention(prediction['landmarks'])
+        try:
+            eye = measure_eyes(frame_bgr, prediction['landmarks'])
+        except Exception as ex:  # eye analysis must never break expression/attention telemetry
+            print(f"[Inference] Eye measurement error: {ex!r}")
+            eye = None
         self.last_latency_ms = max(1, int((time.perf_counter() - start) * 1000))
         self.frames_processed += 1
         return {
@@ -101,6 +107,7 @@ class InferenceEngine:
             'confidence': round(prediction['confidence'], 2),
             'attention': round(float(attention), 2),
             'scores': prediction['scores'],
+            'eye': eye,
             'latency_ms': self.last_latency_ms,
             # Lazily encoded: only needed the first time a student shows an expression
             'face_jpeg': lambda: self._face_jpeg(frame_bgr, prediction.get('box')),

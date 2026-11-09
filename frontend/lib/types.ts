@@ -24,6 +24,31 @@ export interface StudentData {
   /** How the face got its name: recognised automatically, or named by the instructor */
   match?: ScreenMatch;
   section?: SectionRef | null;
+  /** Eye movement over the last minute of webcam frames (memory only, never stored) */
+  eye?: EyeMovement | null;
+}
+
+/**
+ * Webcam eye movement analysis (backend/inference/eye_movement.py). Gaze is normalised to the
+ * screen: x -1 left .. +1 right, y -1 up .. +1 down; |x|, |y| <= 0.5 is on the screen.
+ */
+export interface EyeMovement {
+  gaze: [number, number] | null;
+  on_screen: boolean;
+  eyes_open: boolean | null;
+  on_screen_pct: number;
+  /** Share of tracked time spent in fixations (steady gaze) */
+  fixation_pct: number;
+  fixations: number;
+  mean_fixation_s: number;
+  /** null until ~10 s of data */
+  gaze_shifts_per_min: number | null;
+  closures_per_min: number | null;
+  longest_closure_s: number;
+  drowsy: boolean;
+  /** Recent gaze points, oldest first (scanpath) */
+  trail: [number, number][];
+  window_s: number;
 }
 
 export interface SectionRef {

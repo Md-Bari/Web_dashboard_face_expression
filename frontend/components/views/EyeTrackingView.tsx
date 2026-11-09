@@ -6,6 +6,7 @@ import { useSectionView } from '@/lib/sections';
 import { formatClock } from '@/lib/format';
 import { Avatar } from '@/components/dashboard/Avatar';
 import { AttentionBar, Card, PageTitle, Stat } from './ui';
+import { EyeMovementPanel } from '@/components/dashboard/EyeMovementPanel';
 
 const BINS = [
   { label: '0-20%', min: 0, max: 0.2, color: '#EF4444' },
@@ -36,7 +37,7 @@ export function EyeTrackingView() {
     <div className="space-y-4">
       <PageTitle
         title="Eye Tracking"
-        subtitle="Attention per student (0-100%) from head direction: facing the screen is high; turned away or out of frame is low"
+        subtitle="Attention from head direction, plus eye movement analysis: gaze position, fixations, gaze shifts and eye closures"
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -93,6 +94,8 @@ export function EyeTrackingView() {
           </div>
         </Card>
       </div>
+
+      <EyeMovementPanel students={students} />
 
       <Card title="Needs Attention" subtitle="Students with the lowest attention right now">
         <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">

@@ -15,6 +15,7 @@ from apps.analytics import identity, realtime, screen, snapshots
 from apps.analytics.inference_engine import aget_engine, engine_status, get_engine
 from apps.analytics.models import SessionSnapshot, TeachingSuggestion
 from apps.analytics.services import AWAY, SmoothingEngine, AggregationService, serialize_suggestion
+from eye_movement import EyeMovementAnalyzer  # noqa: E402  (backend/inference, put on sys.path by inference_engine)
 
 User = get_user_model()
 
@@ -65,6 +66,8 @@ class StudentConsumer(AsyncWebsocketConsumer):
         self.told_no_face = False
         self.missed_faces = 0
         self.last_heartbeat_at = 0.0
+        # Fixations, gaze shifts and eye closures over the last minute (memory only, never stored)
+        self.eyes = EyeMovementAnalyzer()
 
         await self.accept()
 
@@ -174,6 +177,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
                         "message": "No face detected. Face the camera in good lighting so your engagement can be measured.",
                     }))
                 # Camera on but nobody facing it (looked away, left the desk): counts as no attention
+                self.eyes.add(now, None)
                 self.missed_faces += 1
                 if self.missed_faces >= AWAY_AFTER_FRAMES:
                     smoothed = await self.smooth_and_save(AWAY, 0.0, 0.0)
@@ -185,6 +189,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
         self.told_no_model = False
         self.told_no_face = False
         self.missed_faces = 0
+        self.eyes.add(now, result.get('eye'))
 
         smoothed = await self.smooth_and_save(result['emotion'], result['attention'], result['confidence'])
         if smoothed is None:
@@ -202,6 +207,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
             "confidence": result['confidence'],
             "latency_ms": result['latency_ms'],
             "model_name": engine.emotion_model.model_name,
+            "eye": self.eyes.summary(),
         }))
 
     # ------------------------------------------------------------------ helpers
@@ -221,6 +227,7 @@ class StudentConsumer(AsyncWebsocketConsumer):
                 "raw_emotion": raw_emotion,
                 "attention": smoothed['attention'],
                 "confidence": confidence,
+                "eye": self.eyes.summary(),
                 "timestamp": payload.get('timestamp') or int(time.time() * 1000),
             },
         })
