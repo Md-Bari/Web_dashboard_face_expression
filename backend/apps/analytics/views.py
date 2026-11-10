@@ -9,6 +9,7 @@ from rest_framework import views, status, permissions
 from rest_framework.response import Response
 
 from apps.courses.access import get_instructor_session
+from . import snapshots
 from .emotions import EMOTIONS, percentages
 from .models import ExpressionSnapshot, ParticipantStat, SessionSnapshot, TeachingSuggestion
 from .screen import screen_participant_id, screen_participant_name
@@ -223,6 +224,18 @@ class ExpressionSnapshotListView(InstructorSessionMixin, views.APIView):
         return Response({'emotions': list(EMOTIONS), 'students': students})
 
 
+class ExpressionSnapshotDetailView(InstructorSessionMixin, views.APIView):
+    """DELETE one stored photo; that expression is captured again on the student's next clear sighting."""
+
+    def delete(self, request, session_id, snapshot_id):
+        session = self.get_session(request, session_id)
+        snap = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id).first() if session else None
+        if not snap:
+            return Response({'error': 'Photo not found'}, status=status.HTTP_404_NOT_FOUND)
+        snapshots.remove(snap)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class ExpressionSnapshotImageView(InstructorSessionMixin, views.APIView):
     """One stored photo. Served through the API (never a public URL) so only the session's instructor sees it."""
 
@@ -233,5 +246,6 @@ class ExpressionSnapshotImageView(InstructorSessionMixin, views.APIView):
         if not path or not os.path.isfile(path):
             return self.not_found()
         response = FileResponse(open(path, 'rb'), content_type='image/jpeg')
-        response['Cache-Control'] = 'private, max-age=300'
+        # Re-checked on every view: a shared browser must not show another instructor's cached photo
+        response['Cache-Control'] = 'private, no-cache'
         return response

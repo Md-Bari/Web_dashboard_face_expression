@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ImageOff, RefreshCw, Search, X } from 'lucide-react';
+import { ImageOff, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { useDashboardStore } from '@/lib/store';
 import { matchesSection } from '@/lib/sections';
 import { api } from '@/lib/api';
@@ -26,6 +26,29 @@ export function PhotosView() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [removing, setRemoving] = useState<number | null>(null);
+
+  /** Delete one photo; the slot goes back to "Not yet" and is captured again on the next clear sighting */
+  const removePhoto = (studentId: number, emotion: EmotionType, photo: ExpressionPhoto) => {
+    if (sessionId === undefined || removing !== null) return;
+    setRemoving(photo.id);
+    api
+      .deleteExpressionPhoto(sessionId, photo.id)
+      .then(() => {
+        setRows((prev) =>
+          prev?.map((r) => {
+            if (r.student_id !== studentId) return r;
+            const photos = { ...r.photos };
+            delete photos[emotion];
+            return { ...r, photos };
+          }) ?? prev
+        );
+        setSelected((s) => (s?.photo.id === photo.id ? null : s));
+        setError(null);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not remove the photo'))
+      .finally(() => setRemoving(null));
+  };
 
   const apply = (students: ExpressionPhotoRow[]) => {
     setRows(students);
@@ -154,15 +177,31 @@ export function PhotosView() {
                   return (
                     <figure key={emotion} className="min-w-0">
                       {photo ? (
-                        <button
-                          onClick={() => setSelected({ student: row, emotion, photo })}
-                          className="block w-full aspect-square rounded-xl overflow-hidden bg-slate-100 ring-2 ring-transparent hover:ring-blue-400 transition"
-                          style={{ boxShadow: `inset 0 -3px 0 ${meta.color}` }}
-                          aria-label={`${row.name} - ${meta.label}`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={api.url(photo.url)} alt={`${row.name} ${meta.label}`} loading="lazy" className="w-full h-full object-cover" />
-                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => setSelected({ student: row, emotion, photo })}
+                            className="block w-full aspect-square rounded-xl overflow-hidden bg-slate-100 ring-2 ring-transparent hover:ring-blue-400 transition"
+                            style={{ boxShadow: `inset 0 -3px 0 ${meta.color}` }}
+                            aria-label={`${row.name} - ${meta.label}`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={api.url(photo.url)}
+                              alt={`${row.name} ${meta.label}`}
+                              loading="lazy"
+                              className={`w-full h-full object-cover ${removing === photo.id ? 'opacity-40' : ''}`}
+                            />
+                          </button>
+                          <button
+                            onClick={() => removePhoto(row.student_id, emotion, photo)}
+                            disabled={removing !== null}
+                            title="Remove and capture again"
+                            aria-label={`Remove ${row.name} ${meta.label} photo`}
+                            className="absolute top-1 right-1 p-1 rounded-full bg-white/90 text-slate-600 hover:bg-rose-500 hover:text-white shadow-md border border-slate-200 transition disabled:opacity-50"
+                          >
+                            {removing === photo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                          </button>
+                        </div>
                       ) : (
                         <div className="w-full aspect-square rounded-xl border border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-300">
                           <ImageOff className="w-5 h-5" />

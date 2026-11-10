@@ -66,6 +66,77 @@ class CourseInstructorIsolationTestCase(TestCase):
         self.assertNotIn('DS201-L5', session_codes)
 
 
+class CrossInstructorAccessTestCase(CourseInstructorIsolationTestCase):
+    """Instructor 2 tries every instructor endpoint against instructor 1's class: nothing is shown or changed."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.courses.models import Enrollment, Section
+        self.section1 = Section.objects.create(course=self.course1, name='A')
+        self.student = User.objects.create_user(username='kid', password='x', role='student')
+        self.enrollment1 = Enrollment.objects.create(course=self.course1, student=self.student, section=self.section1)
+        self.client.force_authenticate(user=self.instructor2)
+
+    def test_nothing_of_another_instructor_is_listed(self):
+        c1, s1 = self.course1.id, self.session1.id
+        self.assertEqual(self.client.get(f'/api/sections/?course={c1}').data, [])
+        self.assertEqual(self.client.get(f'/api/enrollments/?course={c1}').data, [])
+        self.assertEqual(self.client.get('/api/enrollments/').data, [])
+        self.assertEqual(self.client.get(f'/api/sessions/?course={c1}').data, [])
+        self.assertEqual(self.client.get('/api/sessions/current/').data['id'], self.session2.id)
+        for url in (f'/api/courses/{c1}/', f'/api/sessions/{s1}/', f'/api/sections/{self.section1.id}/',
+                    f'/api/enrollments/{self.enrollment1.id}/'):
+            self.assertEqual(self.client.get(url).status_code, 404, url)
+        for suffix in ('history/', 'suggestions/', 'report/', 'report.csv', 'expression-snapshots/',
+                       'expression-snapshots/1/image/'):
+            url = f'/api/analytics/sessions/{s1}/{suffix}'
+            self.assertEqual(self.client.get(url).status_code, 404, url)
+
+    def test_nothing_of_another_instructor_can_be_changed(self):
+        c1, s1 = self.course1.id, self.session1.id
+        writes = [
+            ('patch', f'/api/courses/{c1}/', {'title': 'Taken'}),
+            ('delete', f'/api/courses/{c1}/', None),
+            ('patch', f'/api/sessions/{s1}/', {'title': 'Taken'}),
+            ('delete', f'/api/sessions/{s1}/', None),
+            ('post', f'/api/sessions/{s1}/end/', {}),
+            ('post', f'/api/sessions/{s1}/start/', {}),
+            ('post', f'/api/sessions/{s1}/meeting/', {}),
+            ('post', f'/api/sessions/{s1}/moderate/', {'action': 'remove', 'identity': f'user-{self.student.id}'}),
+            ('patch', f'/api/sections/{self.section1.id}/', {'name': 'Z'}),
+            ('delete', f'/api/sections/{self.section1.id}/', None),
+            ('post', '/api/sections/', {'course_id': c1, 'name': 'B'}),
+            ('delete', f'/api/enrollments/{self.enrollment1.id}/', None),
+            ('post', '/api/enrollments/', {'course_id': c1, 'identifier': 'kid', 'section_id': self.section1.id}),
+            ('post', '/api/enrollments/import/', {'course_id': c1, 'csv': 'kid', 'section_id': self.section1.id}),
+            ('post', '/api/sessions/', {'course_id': c1, 'title': 'Hijack'}),
+            ('post', f'/api/analytics/sessions/{s1}/aggregate/', {}),
+            ('post', f'/api/analytics/sessions/{s1}/suggestions/', {'suggestion_id': 1}),
+            ('delete', f'/api/analytics/sessions/{s1}/expression-snapshots/1/', None),
+        ]
+        for method, url, body in writes:
+            res = getattr(self.client, method)(url, body, format='json')
+            self.assertIn(res.status_code, (400, 403, 404), f'{method.upper()} {url} -> {res.status_code}')
+
+        self.course1.refresh_from_db()
+        self.session1.refresh_from_db()
+        self.section1.refresh_from_db()
+        self.assertEqual((self.course1.title, self.session1.title, self.session1.status, self.section1.name),
+                         ('Data Structures', 'Data Structures - Lecture 5', 'LIVE', 'A'))
+        self.assertEqual(self.course1.sessions.count(), 1)
+        self.assertEqual(self.course1.sections.count(), 1)
+        self.assertTrue(self.course1.enrollments.filter(id=self.enrollment1.id).exists())
+
+    def test_cannot_move_own_student_into_another_instructors_section(self):
+        from apps.courses.models import Enrollment, Section
+        own_section = Section.objects.create(course=self.course2, name='A')
+        mine = Enrollment.objects.create(course=self.course2, student=self.student, section=own_section)
+        res = self.client.patch(f'/api/enrollments/{mine.id}/', {'section_id': self.section1.id}, format='json')
+        self.assertEqual(res.status_code, 400)
+        mine.refresh_from_db()
+        self.assertEqual(mine.section_id, own_section.id)
+
+
 
 class RoleAccessTestCase(CourseInstructorIsolationTestCase):
     def test_superuser_is_admin_and_sees_everything(self):
@@ -119,12 +190,16 @@ class JoinLinkTestCase(TestCase):
         self.assertEqual(student.role, 'student')
         self.assertTrue(self.course.enrollments.filter(student=student).exists())
 
-    def test_register_rejects_weak_password_and_taken_username(self):
-        weak = self.client.post(f'/api/join/{self.course.join_code}/register/', {
-            'first_name': 'A', 'username': 'abc', 'password': '12345678',
+    def test_register_accepts_any_password_but_rejects_empty_and_taken_username(self):
+        short = self.client.post(f'/api/join/{self.course.join_code}/register/', {
+            'first_name': 'A', 'username': 'abc', 'password': '1',
         }, format='json')
-        self.assertEqual(weak.status_code, 400)
-        self.assertIn('password', weak.data)
+        self.assertEqual(short.status_code, 201, short.data)
+        empty = self.client.post(f'/api/join/{self.course.join_code}/register/', {
+            'first_name': 'B', 'username': 'abd', 'password': '',
+        }, format='json')
+        self.assertEqual(empty.status_code, 400)
+        self.assertIn('password', empty.data)
         taken = self.client.post(f'/api/join/{self.course.join_code}/register/', {
             'first_name': 'A', 'username': 'TEACH', 'password': 'a-Long-pass-42',
         }, format='json')
@@ -258,7 +333,7 @@ class ClassSectionTestCase(TestCase):
         student = self.api.post(f'/api/sessions/{session.id}/meeting/', {'consent': True}, format='json')
         self.assertEqual(student.status_code, 200)
         grant = jwt.decode(student.data['token'], LIVEKIT['LIVEKIT_API_SECRET'], algorithms=['HS256'])['video']
-        self.assertEqual(grant['canPublishSources'], ['camera', 'microphone'])
+        self.assertEqual(grant['canPublishSources'], ['camera', 'microphone', 'screen_share', 'screen_share_audio'])
         self.assertNotIn('roomAdmin', grant)
 
         Enrollment.objects.create(course=self.course, student=self.bob, section=self.b)

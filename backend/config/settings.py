@@ -124,13 +124,8 @@ else:
 
 AUTH_USER_MODEL = 'accounts.User'
 
-# Password validation
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-        'OPTIONS': {'min_length': 6},
-    },
-]
+# Password validation: no rules (any non-empty password is accepted)
+AUTH_PASSWORD_VALIDATORS = []
 
 # REST Framework settings
 REST_FRAMEWORK = {

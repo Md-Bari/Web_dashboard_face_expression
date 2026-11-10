@@ -2,8 +2,6 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import Course, Enrollment, ClassSession, Section
 from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import get_password_validators, validate_password
-from django.core.exceptions import ValidationError as DjangoValidationError
 from apps.accounts.serializers import UserSerializer
 
 
@@ -183,15 +181,6 @@ class ClassSessionSerializer(serializers.ModelSerializer):
         return obj.attendee_enrollments().count()
 
 
-# Public self sign-up gets Django's standard checks even if the site-wide setting is looser
-SIGNUP_PASSWORD_VALIDATORS = get_password_validators([
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
-])
-
-
 class StudentRegistrationSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
@@ -199,21 +188,12 @@ class StudentRegistrationSerializer(serializers.Serializer):
         'invalid': 'Use 3-150 letters, digits or . @ + - _ (no spaces).',
     })
     email = serializers.EmailField(required=False, allow_blank=True)
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = serializers.CharField(write_only=True)  # any non-empty password is accepted
 
     def validate_username(self, value):
         if get_user_model().objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError('This username is taken.')
         return value
-
-    def validate(self, attrs):
-        user = get_user_model()(username=attrs['username'], first_name=attrs['first_name'],
-                                email=attrs.get('email', ''))
-        try:
-            validate_password(attrs['password'], user, SIGNUP_PASSWORD_VALIDATORS)
-        except DjangoValidationError as exc:
-            raise serializers.ValidationError({'password': list(exc.messages)})
-        return attrs
 
     def create(self, validated_data):
         password = validated_data.pop('password')

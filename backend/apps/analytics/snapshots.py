@@ -9,6 +9,8 @@ connections of the same student can never both store a "happy". Deleting a row d
 import os
 import re
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.signals import post_delete
@@ -63,6 +65,29 @@ def save_first(session_id, student, emotion, confidence, jpeg_bytes):
         snapshot.delete()
         return False
     return True
+
+
+def student_group(session_id, student_id):
+    """Channel group of one student's live webcam connection(s) in a session."""
+    return f"snapshots_{session_id}_{student_id}"
+
+
+def remove(snapshot):
+    """
+    Delete a stored photo (and its file) so the expression is captured again: the student's live
+    connection is told to forget the slot, and the next confident sighting is stored afresh.
+    """
+    session_id, student_id, emotion = snapshot.session_id, snapshot.student_id, snapshot.emotion
+    snapshot.delete()
+    layer = get_channel_layer()
+    if layer:
+        try:
+            async_to_sync(layer.group_send)(student_group(session_id, student_id), {
+                "type": "snapshot_removed",
+                "emotion": emotion,
+            })
+        except Exception as exc:  # no live connection to tell is fine; it re-reads on connect
+            print(f"[snapshots] could not notify {student_id}/{emotion}: {exc!r}")
 
 
 @receiver(post_delete, sender=ExpressionSnapshot)

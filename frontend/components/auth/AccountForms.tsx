@@ -132,13 +132,9 @@ export function AccountForms({
               value={form.password}
               onChange={set('password')}
               required
-              minLength={mode === 'register' ? 8 : undefined}
               autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
               className={input}
             />
-            {mode === 'register' && (
-              <span className="block mt-1 text-[11px] text-slate-400">At least 8 characters, not only numbers.</span>
-            )}
           </label>
 
           {error && <p className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg p-2.5">{error}</p>}

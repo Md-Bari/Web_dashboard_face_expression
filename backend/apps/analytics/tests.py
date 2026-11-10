@@ -168,6 +168,18 @@ class ConsumerTestCase(TransactionTestCase):
         self.assertEqual(out['type'], 'websocket.close')
         self.assertEqual(out['code'], 4401)
 
+    async def test_other_instructor_cannot_open_the_live_dashboard_socket(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        other = await User.objects.acreate(username='other_teacher', role='instructor')
+        token = str(RefreshToken.for_user(other).access_token)
+        comm = WebsocketCommunicator(
+            self.app, f'/ws/instructor/{self.session.id}/', headers=[(b'cookie', f'access_token={token}'.encode())],
+        )
+        await comm.connect()
+        out = await comm.receive_output()
+        # Closed before any session data (students, emotions, previews) is sent
+        self.assertEqual((out['type'], out['code']), ('websocket.close', 4403))
+
     async def test_student_without_consent_is_rejected(self):
         comm = self.communicator(f'/ws/student/{self.session.id}/?student_id={self.student.id}')
         await comm.connect()
@@ -388,14 +400,15 @@ class ExpressionSnapshotTestCase(ConsumerTestCase):
         shutil.rmtree(self.media, ignore_errors=True)
         super().tearDown()
 
-    async def stream(self, readings):
-        """Send one frame per (emotion, confidence) and wait for each telemetry reply."""
+    async def stream(self, readings, comm=None):
+        """Send one frame per (emotion, confidence) and wait for each telemetry reply (on `comm` if given)."""
         import asyncio
         engine = get_engine()
         frontal = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]
-        comm = self.communicator(f'/ws/student/{self.session.id}/?student_id={self.student.id}&consent=1')
-        await comm.connect()
-        await comm.receive_output(timeout=60)  # ready
+        if comm is None:
+            comm = self.communicator(f'/ws/student/{self.session.id}/?student_id={self.student.id}&consent=1')
+            await comm.connect()
+            await comm.receive_output(timeout=60)  # ready
         with mock.patch.object(engine.emotion_model, 'session', object()):
             for emotion, confidence in readings:
                 prediction = {'emotion': emotion, 'confidence': confidence, 'scores': {},
@@ -431,6 +444,19 @@ class ExpressionSnapshotTestCase(ConsumerTestCase):
         await comm.receive_output(timeout=10)
         self.assertFalse(await ExpressionSnapshot.objects.filter(student=self.student).aexists())
         self.assertFalse(os.path.exists(path))
+        await comm.disconnect()
+
+    async def test_removed_photo_is_captured_again_on_the_live_connection(self):
+        from channels.db import database_sync_to_async
+        from apps.analytics import snapshots
+        from apps.analytics.models import ExpressionSnapshot
+        comm = await self.stream([('happy', 0.9)])
+        first = await ExpressionSnapshot.objects.aget(student=self.student, emotion='happy')
+        await database_sync_to_async(snapshots.remove)(first)
+        await self.stream([('happy', 0.7)], comm=comm)
+        again = await ExpressionSnapshot.objects.aget(student=self.student, emotion='happy')
+        self.assertNotEqual(again.id, first.id)
+        self.assertEqual(again.confidence, 0.7)
         await comm.disconnect()
 
 
@@ -477,8 +503,25 @@ class ExpressionPhotoGalleryTestCase(TestCase):
         self.client.force_authenticate(None)
         self.assertIn(self.client.get(url).status_code, (401, 403))
 
+    def test_owner_removes_photo_and_it_can_be_stored_again(self):
+        import os
+        from apps.analytics import snapshots
+        from apps.analytics.models import ExpressionSnapshot
+        snap = ExpressionSnapshot.objects.get(student=self.student, emotion='happy')
+        url = f'/api/analytics/sessions/{self.session.id}/expression-snapshots/{snap.id}/'
+        for user in (self.other, self.student):
+            self.client.force_authenticate(user)
+            self.assertEqual(self.client.delete(url).status_code, 404)
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.delete(url).status_code, 204)
+        self.assertFalse(ExpressionSnapshot.objects.filter(id=snap.id).exists())
+        self.assertFalse(os.path.exists(os.path.join(self.media, snap.image)))
+        self.assertEqual(self.client.delete(url).status_code, 404)
+        # The slot is free again: the next clear sighting is stored
+        self.assertTrue(snapshots.save_first(self.session.id, self.student, 'happy', 0.8, b'\xff\xd8new'))
 
-FRONTAL = [[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
+
+FRONTAL =[[38, 52], [74, 52], [56, 72], [42, 92], [70, 92]]  # right eye, left eye, nose, mouth corners
 
 
 class EmotionPreprocessingTestCase(TestCase):

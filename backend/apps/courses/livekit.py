@@ -38,8 +38,8 @@ def _sign(claims, ttl):
 
 def access_token(room, identity, name, *, host=False, metadata=None):
     """
-    Token for joining `room`. Students may publish camera and microphone; the host (the
-    instructor) may also share the screen and moderate the room.
+    Token for joining `room`. Students may publish camera, microphone and a shared screen;
+    the host (the instructor) may also moderate the room.
     """
     grant = {
         'room': room,
@@ -52,7 +52,7 @@ def access_token(room, identity, name, *, host=False, metadata=None):
     if host:
         grant['roomAdmin'] = True
     else:
-        grant['canPublishSources'] = ['camera', 'microphone']
+        grant['canPublishSources'] = ['camera', 'microphone', 'screen_share', 'screen_share_audio']
     return _sign({
         'sub': identity,
         'name': name,

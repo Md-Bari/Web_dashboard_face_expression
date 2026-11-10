@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     SessionHistoryView, TeachingSuggestionsView, AggregateSessionView,
     SessionReportView, SessionReportCSVView, ExpressionSnapshotListView, ExpressionSnapshotImageView,
+    ExpressionSnapshotDetailView,
 )
 
 urlpatterns = [
@@ -12,6 +13,8 @@ urlpatterns = [
     path('sessions/<int:session_id>/report.csv', SessionReportCSVView.as_view(), name='session_report_csv'),
     path('sessions/<int:session_id>/expression-snapshots/', ExpressionSnapshotListView.as_view(),
          name='expression_snapshots'),
+    path('sessions/<int:session_id>/expression-snapshots/<int:snapshot_id>/',
+         ExpressionSnapshotDetailView.as_view(), name='expression_snapshot_detail'),
     path('sessions/<int:session_id>/expression-snapshots/<int:snapshot_id>/image/',
          ExpressionSnapshotImageView.as_view(), name='expression_snapshot_image'),
 ]

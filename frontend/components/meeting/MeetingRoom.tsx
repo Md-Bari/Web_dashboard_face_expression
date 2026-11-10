@@ -30,6 +30,7 @@ import {
   MessageSquare,
   Send,
   MicOff,
+  MonitorX,
   PhoneOff,
   ScanFace,
   UserMinus,
@@ -131,7 +132,10 @@ function RoomBody({
     ],
     { onlySubscribed: false }
   );
-  const screenShare = tracks.find((t) => isTrackReference(t) && t.source === Track.Source.ScreenShare);
+  // A share the instructor stopped stays published but muted: show the camera grid instead of a black screen
+  const screenShare = tracks.find(
+    (t) => isTrackReference(t) && t.source === Track.Source.ScreenShare && !t.publication.isMuted
+  );
   const cameras = tracks.filter((t) => t.source === Track.Source.Camera);
 
   return (
@@ -327,11 +331,9 @@ function ControlStrip({
       <TrackToggle source={Track.Source.Camera} showIcon>
         <span className="hidden sm:inline">Camera</span>
       </TrackToggle>
-      {host && (
-        <TrackToggle source={Track.Source.ScreenShare} showIcon>
-          <span className="hidden sm:inline">Share screen</span>
-        </TrackToggle>
-      )}
+      <TrackToggle source={Track.Source.ScreenShare} showIcon>
+        <span className="hidden sm:inline">Share screen</span>
+      </TrackToggle>
       {!host && (
         <button
           className={button}
@@ -449,11 +451,12 @@ function PeoplePanel({ host, sessionId }: { host: boolean; sessionId: number }) 
     [participants]
   );
 
-  const moderate = async (action: 'remove' | 'mute', participant: Participant) => {
+  /** Remove a participant, or mute their microphone / stop their shared screen (`source`) */
+  const moderate = async (action: 'remove' | 'mute', participant: Participant, source = Track.Source.Microphone) => {
     setError(null);
     try {
-      const mic = participant.getTrackPublication(Track.Source.Microphone);
-      await api.moderate(sessionId, action, participant.identity, mic?.trackSid);
+      const track = participant.getTrackPublication(source);
+      await api.moderate(sessionId, action, participant.identity, track?.trackSid);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
     }
@@ -494,6 +497,15 @@ function PeoplePanel({ host, sessionId }: { host: boolean; sessionId: number }) 
                 {p.isMicrophoneEnabled && (
                   <button onClick={() => moderate('mute', p)} title="Mute" className="p-1.5 rounded-lg hover:bg-white/10">
                     <MicOff className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {p.isScreenShareEnabled && (
+                  <button
+                    onClick={() => moderate('mute', p, Track.Source.ScreenShare)}
+                    title="Stop their screen share"
+                    className="p-1.5 rounded-lg hover:bg-white/10"
+                  >
+                    <MonitorX className="w-3.5 h-3.5" />
                   </button>
                 )}
                 <button onClick={() => moderate('remove', p)} title="Remove from the class" className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-300">

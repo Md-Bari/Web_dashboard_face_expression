@@ -20,6 +20,12 @@ export function useLogout() {
     }
     useDashboardStore.getState().setUser(null);
     useDashboardStore.getState().reset();
+    try {
+      // Nothing of this account stays in the browser for the next person who signs in here
+      window.localStorage.removeItem('emp-edu:dashboard-session');
+    } catch {
+      // storage unavailable
+    }
     window.location.replace('/login');
   }, []);
 

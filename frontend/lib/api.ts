@@ -182,6 +182,9 @@ export const api = {
     `${apiBase()}/api/analytics/sessions/${id}/report.csv${query({ section })}`,
   expressionPhotos: (id: number) =>
     request<{ students: ExpressionPhotoRow[] }>(`/api/analytics/sessions/${id}/expression-snapshots/`),
+  /** Delete a stored photo; that expression is captured again on the student's next clear sighting */
+  deleteExpressionPhoto: (id: number, photoId: number) =>
+    request<null>(`/api/analytics/sessions/${id}/expression-snapshots/${photoId}/`, { method: 'DELETE' }),
   /** Absolute URL for an API path (photos are fetched with the auth cookie) */
   url: (path: string) => `${apiBase()}${path}`,
 

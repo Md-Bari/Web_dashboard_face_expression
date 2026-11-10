@@ -80,6 +80,9 @@ class StudentConsumer(AsyncWebsocketConsumer):
 
         # Expressions already photographed for this student in this session (one photo per class)
         self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(self.session_id, self.user.id)
+        # The instructor can delete a photo; this group tells the connection to capture that expression again
+        self.snapshot_group = snapshots.student_group(self.session_id, self.user.id)
+        await self.channel_layer.group_add(self.snapshot_group, self.channel_name)
         self.webcam_references = await database_sync_to_async(identity.reference_count)(self.user.id, 'webcam')
         self.last_reference_at = 0.0
         realtime.register_student(self.session_id, self.user.id)
@@ -98,6 +101,8 @@ class StudentConsumer(AsyncWebsocketConsumer):
         })
 
     async def disconnect(self, close_code):
+        if getattr(self, 'snapshot_group', None):
+            await self.channel_layer.group_discard(self.snapshot_group, self.channel_name)
         if self.registered and self.user:
             if realtime.unregister_student(self.session_id, self.user.id):
                 await self.channel_layer.group_send(self.group_name, {
@@ -304,6 +309,10 @@ class StudentConsumer(AsyncWebsocketConsumer):
             self.snapshot_emotions = await database_sync_to_async(snapshots.stored_emotions)(
                 self.session_id, self.user.id,
             )
+
+    async def snapshot_removed(self, event):
+        """The instructor deleted this expression's photo: store the next confident sighting again."""
+        self.snapshot_emotions.discard(event.get('emotion'))
 
     async def maybe_store_reference(self, result):
         """Now and then keep a face template so the instructor's screen capture can name this student."""
