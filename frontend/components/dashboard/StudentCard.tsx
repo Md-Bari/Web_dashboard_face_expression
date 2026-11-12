@@ -5,6 +5,7 @@ import { Minus } from 'lucide-react';
 import { emotionMeta } from '@/lib/emotions';
 import { StudentData } from '@/lib/types';
 import { Avatar } from './Avatar';
+import { mirrorPreview } from '@/lib/mirror';
 
 interface StudentCardProps {
   student: StudentData;
@@ -38,7 +39,7 @@ export function StudentCard({ student, index, onClick }: StudentCardProps) {
           name={student.name}
           src={student.live_thumb || student.avatar_url}
           className="w-full h-full text-lg"
-          imgClassName="object-cover"
+          imgClassName={`object-cover ${mirrorPreview(student) ? '-scale-x-100' : ''}`}
         />
 
         {/* Live camera preview indicator */}

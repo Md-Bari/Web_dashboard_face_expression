@@ -220,6 +220,84 @@ export interface SessionInfo {
   attendee_count?: number;
 }
 
+// ---------------------------------------------------------------- admin portal
+
+export interface AdminAccount {
+  id: number;
+  username: string;
+  name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  display_title: string;
+  role: AuthUser['role'];
+  is_active: boolean;
+  date_joined: string;
+  last_login: string | null;
+}
+
+export interface AdminInstructor extends AdminAccount {
+  courses: number;
+  sessions: number;
+  students: number;
+  live_sessions: number;
+}
+
+export interface AdminStudent extends AdminAccount {
+  consent_given: boolean;
+  classes: { course: string; title: string; section: string | null; instructor: string }[];
+}
+
+export interface ActivityEntry {
+  id: number;
+  user_id: number | null;
+  username: string;
+  name: string;
+  role: string;
+  action: string;
+  label: string;
+  detail: string;
+  ip_address: string | null;
+  user_agent: string;
+  created_at: string;
+}
+
+export interface ActivityPage {
+  total: number;
+  page: number;
+  page_size: number;
+  actions: Record<string, string>;
+  results: ActivityEntry[];
+}
+
+export interface AdminOverview {
+  counts: {
+    instructors: number;
+    active_instructors: number;
+    students: number;
+    courses: number;
+    sessions: number;
+    live_sessions: number;
+    logins_24h: number;
+    failed_logins_24h: number;
+  };
+  live_sessions: { id: number; title: string; course: string; instructor: string; started_at: string | null; attendees: number }[];
+  recent_activity: ActivityEntry[];
+}
+
+export interface NewInstructor {
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  display_title: string;
+  password: string;
+}
+
+export type AccountChange = Partial<
+  Pick<AdminAccount, 'first_name' | 'last_name' | 'email' | 'display_title' | 'is_active'> & { password: string }
+>;
+
 export interface AuthUser {
   id: number;
   username: string;

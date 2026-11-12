@@ -21,6 +21,7 @@ import { SettingsView } from '@/components/views/SettingsView';
 import { ClassesView } from '@/components/views/ClassesView';
 import { SessionsView } from '@/components/views/SessionsView';
 import { api, ApiError } from '@/lib/api';
+import { homeFor } from '@/lib/roles';
 import { useInstructorSocket } from '@/lib/websocket';
 import { useDashboardStore } from '@/lib/store';
 import { EMPTY_EMOTIONS } from '@/lib/emotions';
@@ -117,8 +118,8 @@ export default function DashboardPage() {
         const me = await api.me();
         if (cancelled) return;
         setUser(me);
-        if (me.role === 'student') {
-          router.replace('/student');
+        if (me.role === 'student' || me.role === 'admin') {
+          router.replace(homeFor(me.role));
           return;
         }
         const remembered = rememberedSession();

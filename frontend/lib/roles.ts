@@ -1,8 +1,9 @@
 import type { AuthUser } from './types';
 
-/** Where each role lands after signing in: students join the class, instructors and admins get the dashboard. */
+/** Where each role lands after signing in: students join the class, instructors get the dashboard, admins the admin portal. */
 export function homeFor(role: AuthUser['role']) {
-  return role === 'student' ? '/student' : '/';
+  if (role === 'student') return '/student';
+  return role === 'admin' ? '/admin-portal' : '/';
 }
 
 /** A same-site path from a `?next=` parameter, or null (never an absolute URL - avoids open redirects). */

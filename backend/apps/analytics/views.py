@@ -8,6 +8,7 @@ from django.http import FileResponse, HttpResponse
 from rest_framework import views, status, permissions
 from rest_framework.response import Response
 
+from apps.accounts import activity
 from apps.courses.access import get_instructor_session
 from . import snapshots
 from .emotions import EMOTIONS, percentages
@@ -232,7 +233,9 @@ class ExpressionSnapshotDetailView(InstructorSessionMixin, views.APIView):
         snap = ExpressionSnapshot.objects.filter(id=snapshot_id, session_id=session_id).first() if session else None
         if not snap:
             return Response({'error': 'Photo not found'}, status=status.HTTP_404_NOT_FOUND)
+        label = f'{snap.emotion} photo of {snap.student.username} in {session.title}'
         snapshots.remove(snap)
+        activity.log(request, 'photo_removed', label)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

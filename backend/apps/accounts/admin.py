@@ -1,7 +1,15 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import User
+from .models import ActivityLog, User
+
+
+@admin.register(ActivityLog)
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'username', 'role', 'action', 'detail', 'ip_address')
+    list_filter = ('role', 'action')
+    search_fields = ('username', 'detail', 'ip_address')
+    readonly_fields = [f.name for f in ActivityLog._meta.fields]
 
 
 @admin.register(User)

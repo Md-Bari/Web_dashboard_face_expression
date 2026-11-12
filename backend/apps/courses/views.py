@@ -11,6 +11,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
+from apps.accounts import activity
 from apps.accounts.serializers import UserSerializer
 from apps.accounts.views import set_jwt_cookies
 from . import livekit, services
@@ -74,6 +75,16 @@ class CourseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         course = serializer.save(instructor=self.request.user)
         Section.objects.create(course=course, name='A')  # a new class starts with one section
+        activity.log(self.request, 'course_created', f'{course.code} {course.title}')
+
+    def perform_update(self, serializer):
+        course = serializer.save()
+        activity.log(self.request, 'course_updated', f'{course.code} {course.title}')
+
+    def perform_destroy(self, instance):
+        label = f'{instance.code} {instance.title}'
+        instance.delete()
+        activity.log(self.request, 'course_deleted', label)
 
 
 class SectionViewSet(viewsets.ModelViewSet):
@@ -85,6 +96,15 @@ class SectionViewSet(viewsets.ModelViewSet):
         qs = Section.objects.filter(course__in=managed_courses(self.request.user)).select_related('course')
         course = self.request.query_params.get('course')
         return qs.filter(course_id=course) if course and course.isdigit() else qs
+
+    def perform_create(self, serializer):
+        section = serializer.save()
+        activity.log(self.request, 'section_created', f'Section {section.name} of {section.course.code}')
+
+    def perform_destroy(self, instance):
+        label = f'Section {instance.name} of {instance.course.code}'
+        instance.delete()
+        activity.log(self.request, 'section_deleted', label)
 
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
@@ -150,7 +170,13 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
             where = f'Section {enrollment.section.name}' if enrollment.section else 'no section'
             return Response({'detail': f'{display_name(student)} is already in this class ({where}).'},
                             status=status.HTTP_400_BAD_REQUEST)
+        activity.log(request, 'student_added', f'{student.username} to {course.code} section {section.name}')
         return Response(EnrollmentSerializer(enrollment).data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        label = f'{instance.student.username} from {instance.course.code}'
+        instance.delete()
+        activity.log(self.request, 'student_removed', label)
 
     @action(detail=False, methods=['post'], url_path='import')
     def import_csv(self, request):
@@ -197,6 +223,9 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
                 result['moved'].append(display_name(student))
             else:
                 result['already'].append(display_name(student))
+        activity.log(request, 'students_imported',
+                     f"{course.code}: {len(result['added'])} added, {len(result['moved'])} moved, "
+                     f"{len(result['not_found']) + len(result['not_student'])} not found")
         return Response(result)
 
 
@@ -235,10 +264,16 @@ class ClassSessionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status=params['status'])
         return session_order(qs.select_related('course', 'course__instructor').prefetch_related('sections'))
 
+    def perform_create(self, serializer):
+        session = serializer.save()
+        activity.log(self.request, 'session_created', f'{session.title} ({session.course.code})')
+
     def perform_destroy(self, instance):
         if instance.status == 'LIVE':
             raise PermissionDenied('End the session before deleting it.')
+        label = f'{instance.title} ({instance.course.code})'
         instance.delete()
+        activity.log(self.request, 'session_deleted', label)
 
     @action(detail=False, methods=['get'])
     def current(self, request):
@@ -265,6 +300,8 @@ class ClassSessionViewSet(viewsets.ModelViewSet):
             return None, Response({'detail': 'Only instructors can change a session.'},
                                   status=status.HTTP_403_FORBIDDEN)
         transition(session)
+        action = 'session_ended' if transition is services.end_session else 'session_started'
+        activity.log(request, action, f'{session.title} ({session.course.code})')
         return session, None
 
     @action(detail=True, methods=['post'])
@@ -313,6 +350,8 @@ class ClassSessionViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'The class has not started yet.', 'code': 'not_live', 'status': session.status},
                             status=status.HTTP_409_CONFLICT)
 
+        activity.log(request, 'meeting_joined', f'{session.title} ({session.course.code})'
+                     + (' as instructor' if host else ''))
         identity = f"user-{user.id}"
         token = livekit.access_token(
             session.room_name, identity, display_name(user), host=host,
@@ -449,6 +488,7 @@ class JoinEnrollView(views.APIView):
         if request.user.role != 'student':
             return Response({'detail': 'Only student accounts can join a class.'}, status=status.HTTP_403_FORBIDDEN)
         enrollment = enroll_by_invite(course, section, request.user)
+        activity.log(request, 'class_joined', f'{course.code} section {section.name}')
         return Response({'enrolled': True, 'live_session': _live_session(course, enrollment.section)})
 
 
@@ -471,6 +511,7 @@ class JoinRegisterView(views.APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         enrollment = enroll_by_invite(course, section, user)
+        activity.log(request, 'register', f'via invite link to {course.code} section {section.name}', user=user)
         return signed_in_response(user, {'live_session': _live_session(course, enrollment.section)}, request)
 
 
@@ -582,4 +623,5 @@ class MeetRegisterView(views.APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         meet_enrollment(session, user)
+        activity.log(request, 'register', f'via meeting link to {session.course.code}', user=user)
         return signed_in_response(user, {'session_id': session.id}, request)

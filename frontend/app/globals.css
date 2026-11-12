@@ -46,3 +46,10 @@
     scrollbar-color: #cbd5e1 transparent;
   }
 }
+
+/* Meeting: LiveKit mirrors only your own camera tile. Mirror every camera tile the same way, so
+   others see your video exactly as you see it yourself. Outside the layers so LiveKit's own
+   (unlayered) styles cannot override it. Shared screens are not mirrored. */
+.lk-participant-media-video[data-lk-source='camera'] {
+  transform: rotateY(180deg);
+}

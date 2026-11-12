@@ -14,7 +14,7 @@ User = get_user_model()
 def _user_from_token(raw_token):
     try:
         token = AccessToken(raw_token)
-        return User.objects.get(id=token['user_id'])
+        return User.objects.get(id=token['user_id'], is_active=True)  # a disabled account is signed out
     except Exception:
         return AnonymousUser()
 

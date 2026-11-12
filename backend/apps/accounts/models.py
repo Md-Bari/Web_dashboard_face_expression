@@ -57,3 +57,26 @@ class User(AbstractUser):
         name = self.get_full_name() or self.username
         return f"{name} ({self.role})"
 
+
+class ActivityLog(models.Model):
+    """
+    One thing a person did (signed in, started a class, added a student, ...), for the admin portal.
+    The username and role are copied so the entry still reads correctly after the account changes
+    or is deleted; failed sign-ins have no user, only the username that was tried.
+    """
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='activity')
+    username = models.CharField(max_length=150, blank=True, default='')
+    role = models.CharField(max_length=20, blank=True, default='')
+    action = models.CharField(max_length=40, db_index=True)
+    detail = models.CharField(max_length=300, blank=True, default='')
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['role', '-created_at'])]
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.username or '-'} {self.action}"
+

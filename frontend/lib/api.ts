@@ -1,5 +1,12 @@
 import { apiBase } from './config';
 import type {
+  AccountChange,
+  ActivityPage,
+  AdminAccount,
+  AdminInstructor,
+  AdminOverview,
+  AdminStudent,
+  NewInstructor,
   AuthUser,
   CourseInfo,
   EnrollmentRow,
@@ -187,6 +194,15 @@ export const api = {
     request<null>(`/api/analytics/sessions/${id}/expression-snapshots/${photoId}/`, { method: 'DELETE' }),
   /** Absolute URL for an API path (photos are fetched with the auth cookie) */
   url: (path: string) => `${apiBase()}${path}`,
+
+  // Admin portal (admin accounts only)
+  adminOverview: () => request<AdminOverview>('/api/admin/overview/'),
+  adminInstructors: (q = '') => request<AdminInstructor[]>(`/api/admin/instructors/${query({ q })}`),
+  adminCreateInstructor: (data: NewInstructor) => request<AdminAccount>('/api/admin/instructors/', json(data)),
+  adminStudents: (q = '') => request<AdminStudent[]>(`/api/admin/students/${query({ q })}`),
+  adminUpdateAccount: (id: number, data: AccountChange) => request<AdminAccount>(`/api/admin/accounts/${id}/`, patch(data)),
+  adminLogs: (params: { role?: string; action?: string; user?: number; q?: string; page?: number }) =>
+    request<ActivityPage>(`/api/admin/logs/${query(params)}`),
 
   publicLiveSession: () =>
     request<{ id: number; title: string; course: string; students: { id: number; name: string; avatar_url: string }[] }>(

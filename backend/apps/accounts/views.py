@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.auth.models import update_last_login
 from rest_framework import status
 from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
 from rest_framework.views import APIView
@@ -6,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+from . import activity
 from .models import User
 from .serializers import UserSerializer, CustomTokenObtainPairSerializer, ConsentUpdateSerializer, ProfileSerializer
 
@@ -64,8 +66,16 @@ class CookieTokenObtainPairView(TokenObtainPairView):
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            tried = str(request.data.get('username', '')).strip()
+            activity.log(request, 'login_failed', user=User.objects.filter(username=tried).first(), username=tried)
+            raise
         tokens = serializer.validated_data
+        user = serializer.user
+        update_last_login(None, user)
+        activity.log(request, 'login', user=user)
 
         access_token = tokens.get('access')
         refresh_token = tokens.get('refresh')
@@ -104,6 +114,8 @@ class LogoutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if request.user.is_authenticated:
+            activity.log(request, 'logout')
         response = Response({'detail': 'Logged out successfully.'}, status=status.HTTP_200_OK)
         access_cookie_name = getattr(settings, 'AUTH_COOKIE_ACCESS_NAME', 'access_token')
         refresh_cookie_name = getattr(settings, 'AUTH_COOKIE_REFRESH_NAME', 'refresh_token')
@@ -123,6 +135,7 @@ class MeView(APIView):
         serializer = ProfileSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        activity.log(request, 'profile_updated', ', '.join(sorted(serializer.validated_data)))
         return Response(serializer.data)
 
 
@@ -139,6 +152,7 @@ class ConsentView(APIView):
             user.give_consent()
         else:
             user.revoke_consent()
+        activity.log(request, 'consent_given' if consent else 'consent_revoked')
 
         return Response({
             'consent_given': user.consent_given,
